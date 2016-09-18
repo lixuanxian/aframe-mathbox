@@ -76,12 +76,12 @@ gulp.task('browserify', function () {
         debug: false,
         //detectGlobals: false,
         bare: true,
-        // transform: ['coffeeify'],
-        extensions: ['.js']// extensions: ['.coffee'],
+        transform: ['coffeeify'],
+        extensions: ['.coffee', '.js']// extensions: ['.coffee'],
       }))
-      // .pipe(rename({
-      //   extname: ".js",
-      // }))
+      .pipe(rename({
+        extname: ".js",
+      }))
       .pipe(gulp.dest('.tmp/'))
 });
 
