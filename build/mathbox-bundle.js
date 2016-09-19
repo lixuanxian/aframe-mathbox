@@ -46684,121 +46684,129 @@ THREE.TrackballControls.prototype = Object.create( THREE.EventDispatcher.prototy
 THREE.TrackballControls.prototype.constructor = THREE.TrackballControls;
 
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-module.exports = {"arrow.position": "uniform float worldUnit;\nuniform float lineDepth;\nuniform float lineWidth;\nuniform float focusDepth;\n\nuniform vec4 geometryClip;\nuniform float arrowSize;\nuniform float arrowSpace;\n\nattribute vec4 position4;\nattribute vec3 arrow;\nattribute vec2 attach;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvoid getArrowGeometry(vec4 xyzw, float near, float far, out vec3 left, out vec3 right, out vec3 start) {\n  right = getPosition(xyzw, 1.0);\n  left  = getPosition(vec4(near, xyzw.yzw), 0.0);\n  start = getPosition(vec4(far, xyzw.yzw), 0.0);\n}\n\nmat4 getArrowMatrix(vec3 left, vec3 right, vec3 start) {\n\n  float depth = focusDepth;\n  if (lineDepth < 1.0) {\n    // Depth blending\n    float z = max(0.00001, -right.z);\n    depth = mix(z, focusDepth, lineDepth);\n  }\n    \n  vec3 diff = left - right;\n  float l = length(diff);\n  if (l == 0.0) {\n    return mat4(1.0, 0.0, 0.0, 0.0,\n                0.0, 1.0, 0.0, 0.0,\n                0.0, 0.0, 1.0, 0.0,\n                0.0, 0.0, 0.0, 1.0);\n  }\n\n  // Construct TBN matrix around shaft\n  vec3 t = normalize(diff);\n  vec3 n = normalize(cross(t, t.yzx + vec3(.1, .2, .3)));\n  vec3 b = cross(n, t);\n  \n  // Shrink arrows when vector gets too small\n  // Approach linear scaling with cubic ease the smaller we get\n  float size = arrowSize * lineWidth * worldUnit * depth * 1.25;\n  diff = right - start;\n  l = length(diff) * arrowSpace;\n  float mini = clamp(1.0 - l / size * .333, 0.0, 1.0);\n  float scale = 1.0 - mini * mini * mini;\n  float range = size * scale;\n  \n  // Size to 2.5:1 ratio\n  float rangeNB = range / 2.5;\n\n  // Anchor at end position\n  return mat4(vec4(n * rangeNB,  0),\n              vec4(b * rangeNB,  0),\n              vec4(t * range, 0),\n              vec4(right,  1.0));\n}\n\nvec3 getArrowPosition() {\n  vec3 left, right, start;\n  \n  vec4 p = min(geometryClip, position4);\n  \n  getArrowGeometry(p, attach.x, attach.y, left, right, start);\n  mat4 matrix = getArrowMatrix(left, right, start);\n  return (matrix * vec4(arrow.xyz, 1.0)).xyz;\n\n}\n",
-"axis.position": "uniform vec4 axisStep;\nuniform vec4 axisPosition;\n\nvec4 getAxisPosition(vec4 xyzw, inout vec4 stpq) {\n  return axisStep * xyzw.x + axisPosition;\n}\n",
-"cartesian.position": "uniform mat4 viewMatrix;\n\nvec4 getCartesianPosition(vec4 position, inout vec4 stpq) {\n  return viewMatrix * vec4(position.xyz, 1.0);\n}\n",
-"cartesian4.position": "uniform vec4 basisScale;\nuniform vec4 basisOffset;\nuniform vec4 viewScale;\nuniform vec4 viewOffset;\n\nvec4 getCartesian4Position(vec4 position, inout vec4 stpq) {\n  return position * basisScale + basisOffset;\n}\n",
-"clamp.position": "uniform vec4 clampLimit;\n\nvec4 getClampXYZW(vec4 xyzw) {\n  return clamp(xyzw, vec4(0.0), clampLimit);\n}\n",
-"color.opaque": "vec4 opaqueColor(vec4 color) {\n  return vec4(color.rgb, 1.0);\n}\n",
-"face.position": "uniform vec4 geometryClip;\nattribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getFacePosition() {\n  vec4 p = min(geometryClip, position4);\n  return getPosition(p, 1.0);\n}\n",
-"face.position.normal": "attribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvarying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvoid getFaceGeometry(vec4 xyzw, out vec3 pos, out vec3 normal) {\n  vec3 a, b, c;\n\n  a   = getPosition(vec4(xyzw.xyz, 0.0), 0.0);\n  b   = getPosition(vec4(xyzw.xyz, 1.0), 0.0);\n  c   = getPosition(vec4(xyzw.xyz, 2.0), 0.0);\n\n  pos = getPosition(xyzw, 1.0);\n  normal = normalize(cross(c - a, b - a));\n}\n\nvec3 getFacePositionNormal() {\n  vec3 center, normal;\n\n  getFaceGeometry(position4, center, normal);\n  vNormal   = normal;\n  vLight    = normalize((viewMatrix * vec4(1.0, 2.0, 2.0, 0.0)).xyz);\n  vPosition = -center;\n\n  return center;\n}\n",
-"float.encode": "/*\nFloat encoding technique by\nCarlos Scheidegger\nhttps://github.com/cscheid/lux/blob/master/src/shade/bits/encode_float.js\n\nConversion to GLSL by:\nhttp://concord-consortium.github.io/lab/experiments/webgl-gpgpu/script.js\n*/\n\nfloat shift_right(float v, float amt) { \n  v = floor(v) + 0.5; \n  return floor(v / exp2(amt)); \n}\n\nfloat shift_left(float v, float amt) { \n  return floor(v * exp2(amt) + 0.5); \n}\n\nfloat mask_last(float v, float bits) { \n  return mod(v, shift_left(1.0, bits)); \n}\n\nfloat extract_bits(float num, float from, float to) { \n  from = floor(from + 0.5); to = floor(to + 0.5); \n  return mask_last(shift_right(num, from), to - from); \n}\n\nvec4 encode_float(float val) { \n  if (val == 0.0) return vec4(0, 0, 0, 0); \n  float valuesign = val > 0.0 ? 0.0 : 1.0; \n  val = abs(val); \n  float exponent = floor(log2(val)); \n  float biased_exponent = exponent + 127.0; \n  float fraction = ((val / exp2(exponent)) - 1.0) * 8388608.0; \n  float t = biased_exponent / 2.0; \n  float last_bit_of_biased_exponent = fract(t) * 2.0; \n  float remaining_bits_of_biased_exponent = floor(t); \n  float byte4 = extract_bits(fraction, 0.0, 8.0) / 255.0; \n  float byte3 = extract_bits(fraction, 8.0, 16.0) / 255.0; \n  float byte2 = (last_bit_of_biased_exponent * 128.0 + extract_bits(fraction, 16.0, 23.0)) / 255.0; \n  float byte1 = (valuesign * 128.0 + remaining_bits_of_biased_exponent) / 255.0; \n  return vec4(byte4, byte3, byte2, byte1); \n}\n",
-"float.index.pack": "uniform vec4 indexModulus;\n\nvec4 getSample(vec4 xyzw);\nvec4 getIndex(vec4 xyzw);\n\nvec4 floatPackIndex(vec4 xyzw) {\n  vec4 value = getSample(xyzw);\n  vec4 index = getIndex(xyzw);\n\n  vec4 offset = floor(index + .5) * indexModulus;\n  vec2 sum2 = offset.xy + offset.zw;\n  float sum = sum2.x + sum2.y;\n  return vec4(value.xyz, sum);\n}",
-"float.stretch": "vec4 getSample(vec4 xyzw);\n\nfloat floatStretch(vec4 xyzw, float channelIndex) {\n  vec4 sample = getSample(xyzw);\n  vec2 xy = channelIndex > 1.5 ? sample.zw : sample.xy;\n  return mod(channelIndex, 2.0) > .5 ? xy.y : xy.x;\n}",
-"fragment.clip.dashed": "varying float vClipStrokeWidth;\nvarying float vClipStrokeIndex;\nvarying vec3  vClipStrokeEven;\nvarying vec3  vClipStrokeOdd;\nvarying vec3  vClipStrokePosition;\n\nvoid clipStrokeFragment() {\n  bool odd = mod(vClipStrokeIndex, 2.0) >= 1.0;\n\n  vec3 tangent;\n  if (odd) {\n    tangent = vClipStrokeOdd;\n  }\n  else {\n    tangent = vClipStrokeEven;\n  }\n\n  float travel = dot(vClipStrokePosition, normalize(tangent)) / vClipStrokeWidth;\n  if (mod(travel, 16.0) > 8.0) {\n    discard;\n  }\n}\n",
-"fragment.clip.dotted": "varying float vClipStrokeWidth;\nvarying float vClipStrokeIndex;\nvarying vec3  vClipStrokeEven;\nvarying vec3  vClipStrokeOdd;\nvarying vec3  vClipStrokePosition;\n\nvoid clipStrokeFragment() {\n  bool odd = mod(vClipStrokeIndex, 2.0) >= 1.0;\n\n  vec3 tangent;\n  if (odd) {\n    tangent = vClipStrokeOdd;\n  }\n  else {\n    tangent = vClipStrokeEven;\n  }\n\n  float travel = dot(vClipStrokePosition, normalize(tangent)) / vClipStrokeWidth;\n  if (mod(travel, 4.0) > 2.0) {\n    discard;\n  }\n}\n",
-"fragment.clip.ends": "varying vec2 vClipEnds;\n\nvoid clipEndsFragment() {\n  if (vClipEnds.x < 0.0 || vClipEnds.y < 0.0) discard;\n}\n",
-"fragment.clip.proximity": "varying float vClipProximity;\n\nvoid clipProximityFragment() {\n  if (vClipProximity >= 0.5) discard;\n}",
-"fragment.color": "void setFragmentColor(vec4 color) {\n  gl_FragColor = color;\n}",
-"fragment.map.rgba": "vec4 fragmentRGBA(vec4 rgba, vec4 stpq) {\n  return rgba;\n}",
-"fragment.solid": "void setFragmentColor(vec4 color) {\n  if (color.a < 1.0) discard;\n  gl_FragColor = color;\n}",
-"fragment.transparent": "void setFragmentColor(vec4 color) {\n  if (color.a >= 1.0) discard;\n  gl_FragColor = color;\n}",
-"grid.position": "uniform vec4 gridPosition;\nuniform vec4 gridStep;\nuniform vec4 gridAxis;\n\nvec4 sampleData(vec2 xy);\n\nvec4 getGridPosition(vec4 xyzw) {\n  vec4 onAxis  = gridAxis * sampleData(vec2(xyzw.y, 0.0)).x;\n  vec4 offAxis = gridStep * xyzw.x + gridPosition;\n  return onAxis + offAxis;\n}\n",
-"grow.position": "uniform float growScale;\nuniform vec4  growMask;\nuniform vec4  growAnchor;\n\nvec4 getSample(vec4 xyzw);\n\nvec4 getGrowSample(vec4 xyzw) {\n  vec4 anchor = xyzw * growMask + growAnchor;\n\n  vec4 position = getSample(xyzw);\n  vec4 center = getSample(anchor);\n\n  return mix(center, position, growScale);\n}",
-"join.position": "uniform float joinStride;\nuniform float joinStrideInv;\n\nfloat getIndex(vec4 xyzw);\nvec4 getRest(vec4 xyzw);\nvec4 injectIndices(float a, float b);\n\nvec4 getJoinXYZW(vec4 xyzw) {\n\n  float a = getIndex(xyzw);\n  float b = a * joinStrideInv;\n\n  float integer  = floor(b);\n  float fraction = b - integer;\n  \n  return injectIndices(fraction * joinStride, integer) + getRest(xyzw);\n}\n",
-"label.alpha": "varying float vPixelSize;\n\nvec4 getLabelAlphaColor(vec4 color, vec4 sample) {\n  float mask = clamp(sample.r * 1000.0, 0.0, 1.0);\n  float alpha = (sample.r - .5) * vPixelSize + .5;\n  float a = mask * alpha * color.a;\n  if (a <= 0.0) discard;\n  return vec4(color.xyz, a);\n}\n",
-"label.map": "vec2 mapUV(vec4 uvwo, vec4 stpq) {\n  return uvwo.xy;\n}\n",
-"label.outline": "uniform float outlineExpand;\nuniform float outlineStep;\nuniform vec3  outlineColor;\n\nvarying float vPixelSize;\n\nconst float PIXEL_STEP = 255.0 / 16.0;\n\nvec4 getLabelOutlineColor(vec4 color, vec4 sample) {\n  float ps = vPixelSize * PIXEL_STEP;\n  float os = outlineStep;\n\n  float sdf = sample.r - .5 + outlineExpand;\n  vec2  sdfs = vec2(sdf, sdf + os);\n  vec2  alpha = clamp(sdfs * ps + .5, 0.0, 1.0);\n\n  if (alpha.y <= 0.0) {\n    discard;\n  }\n\n  vec3 blend = color.xyz;\n  if (alpha.y > alpha.x) {\n    blend = sqrt(mix(outlineColor * outlineColor, blend * blend, alpha.x));\n  }\n  \n  return vec4(blend, alpha.y * color.a);\n}\n",
-"layer.position": "uniform vec4 layerScale;\nuniform vec4 layerBias;\n\nvec4 layerPosition(vec4 position, inout vec4 stpq) {\n  return layerScale * position + layerBias;\n}\n",
-"lerp.depth": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpDepth(vec4 xyzw) {\n  float x = xyzw.z;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(xyzw.xy, i, xyzw.w);\n  vec4 xyzw2 = vec4(xyzw.xy, i + 1.0, xyzw.w);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
-"lerp.height": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpHeight(vec4 xyzw) {\n  float x = xyzw.y;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(xyzw.x, i, xyzw.zw);\n  vec4 xyzw2 = vec4(xyzw.x, i + 1.0, xyzw.zw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
-"lerp.items": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpItems(vec4 xyzw) {\n  float x = xyzw.w;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(xyzw.xyz, i);\n  vec4 xyzw2 = vec4(xyzw.xyz, i + 1.0);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
-"lerp.width": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpWidth(vec4 xyzw) {\n  float x = xyzw.x;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(i, xyzw.yzw);\n  vec4 xyzw2 = vec4(i + 1.0, xyzw.yzw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
-"line.position": "// Units and calibration\nuniform float worldUnit;\nuniform float lineWidth;\nuniform float lineDepth;\nuniform float focusDepth;\n\n// General data index\nuniform vec4 geometryClip;\nattribute vec4 position4;\n\n// (Start/mid/end -1/0/1, top/bottom -1,1) \nattribute vec2 line;\n\n// 0...1 for round or bevel joins\n#ifdef LINE_JOIN_DETAIL\nattribute float joint;\n#else\nconst float joint = 0.0;\n#endif\n\n// Knock out excessively long line segments (e.g. for asymtpotes)\n#ifdef LINE_PROXIMITY\nuniform float lineProximity;\nvarying float vClipProximity;\n#endif\n\n// Ghetto line stroking (local only, not global)\n#ifdef LINE_STROKE\nvarying float vClipStrokeWidth;\nvarying float vClipStrokeIndex;\nvarying vec3  vClipStrokeEven;\nvarying vec3  vClipStrokeOdd;\nvarying vec3  vClipStrokePosition;\n#endif\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\n// Clip line ends for arrows / decoration\n#ifdef LINE_CLIP\nuniform float clipRange;\nuniform vec2  clipStyle;\nuniform float clipSpace;\n\nattribute vec2 strip;\n\nvarying vec2 vClipEnds;\n\nvoid clipEnds(vec4 xyzw, vec3 center, vec3 pos) {\n\n  // Sample end of line strip\n  vec4 xyzwE = vec4(strip.y, xyzw.yzw);\n  vec3 end   = getPosition(xyzwE, 0.0);\n\n  // Sample start of line strip\n  vec4 xyzwS = vec4(strip.x, xyzw.yzw);\n  vec3 start = getPosition(xyzwS, 0.0);\n\n  // Measure length\n  vec3 diff = end - start;\n  float l = length(diff) * clipSpace;\n\n  // Arrow length (=2.5x radius)\n  float arrowSize = 1.25 * clipRange * lineWidth * worldUnit;\n\n  vClipEnds = vec2(1.0);\n\n  if (clipStyle.y > 0.0) {\n    // Depth blend end\n    float depth = focusDepth;\n    if (lineDepth < 1.0) {\n      float z = max(0.00001, -end.z);\n      depth = mix(z, focusDepth, lineDepth);\n    }\n    \n    // Absolute arrow length\n    float size = arrowSize * depth;\n\n    // Adjust clip range\n    // Approach linear scaling with cubic ease the smaller we get\n    float mini = clamp(1.0 - l / size * .333, 0.0, 1.0);\n    float scale = 1.0 - mini * mini * mini; \n    float invrange = 1.0 / (size * scale);\n  \n    // Clip end\n    diff = normalize(end - center);\n    float d = dot(end - pos, diff);\n    vClipEnds.x = d * invrange - 1.0;\n  }\n\n  if (clipStyle.x > 0.0) {\n    // Depth blend start\n    float depth = focusDepth;\n    if (lineDepth < 1.0) {\n      float z = max(0.00001, -start.z);\n      depth = mix(z, focusDepth, lineDepth);\n    }\n    \n    // Absolute arrow length\n    float size = arrowSize * depth;\n\n    // Adjust clip range\n    // Approach linear scaling with cubic ease the smaller we get\n    float mini = clamp(1.0 - l / size * .333, 0.0, 1.0);\n    float scale = 1.0 - mini * mini * mini; \n    float invrange = 1.0 / (size * scale);\n  \n    // Clip start \n    diff = normalize(center - start);\n    float d = dot(pos - start, diff);\n    vClipEnds.y = d * invrange - 1.0;\n  }\n\n\n}\n#endif\n\n// Adjust left/center/right to be inside near/far z range\nconst float epsilon = 1e-5;\nvoid fixCenter(inout vec3 left, inout vec3 center, inout vec3 right) {\n  if (center.z >= 0.0) {\n    if (left.z < 0.0) {\n      float d = (center.z + epsilon) / (center.z - left.z);\n      center = mix(center, left, d);\n    }\n    else if (right.z < 0.0) {\n      float d = (center.z + epsilon) / (center.z - right.z);\n      center = mix(center, right, d);\n    }\n  }\n\n  if (left.z >= 0.0) {\n    if (center.z < 0.0) {\n      float d = (left.z + epsilon) / (left.z - center.z);\n      left = mix(left, center, d);\n    }\n  }\n\n  if (right.z >= 0.0) {\n    if (center.z < 0.0) {\n      float d = (right.z + epsilon) / (right.z - center.z);\n      right = mix(right, center, d);\n    }\n  }\n}\n\n// Sample the source data in an edge-aware manner\nvoid getLineGeometry(vec4 xyzw, float edge, out vec3 left, out vec3 center, out vec3 right) {\n  vec4 delta = vec4(1.0, 0.0, 0.0, 0.0);\n\n  center =                 getPosition(xyzw, 1.0);\n  left   = (edge > -0.5) ? getPosition(xyzw - delta, 0.0) : center;\n  right  = (edge < 0.5)  ? getPosition(xyzw + delta, 0.0) : center;\n}\n\n// Calculate the position for a vertex along the line, including joins\nvec3 getLineJoin(float edge, bool odd, vec3 left, vec3 center, vec3 right, float width, float offset, float joint) {\n  vec2 join = vec2(1.0, 0.0);\n\n  fixCenter(left, center, right);\n\n  vec4 a = vec4(left.xy, right.xy);\n  vec4 b = a / vec4(left.zz, right.zz);\n\n  vec2 l = b.xy;\n  vec2 r = b.zw;\n  vec2 c = center.xy / center.z;\n\n  vec4 d = vec4(l, c) - vec4(c, r);\n  float l1 = dot(d.xy, d.xy);\n  float l2 = dot(d.zw, d.zw);\n\n  if (l1 + l2 > 0.0) {\n    \n    if (edge > 0.5 || l2 == 0.0) {\n      vec2 nl = normalize(d.xy);\n      vec2 tl = vec2(nl.y, -nl.x);\n\n#ifdef LINE_PROXIMITY\n      vClipProximity = 1.0;\n#endif\n\n#ifdef LINE_STROKE\n      vClipStrokeEven = vClipStrokeOdd = normalize(left - center);\n#endif\n      join = tl;\n    }\n    else if (edge < -0.5 || l1 == 0.0) {\n      vec2 nr = normalize(d.zw);\n      vec2 tr = vec2(nr.y, -nr.x);\n\n#ifdef LINE_PROXIMITY\n      vClipProximity = 1.0;\n#endif\n\n#ifdef LINE_STROKE\n      vClipStrokeEven = vClipStrokeOdd = normalize(center - right);\n#endif\n      join = tr;\n    }\n    else {\n      // Limit join stretch for tiny segments\n      float lmin2 = min(l1, l2) / (width * width);\n\n      // Hide line segment if ratio of leg lengths exceeds promixity threshold\n#ifdef LINE_PROXIMITY\n      float lr     = l1 / l2;\n      float rl     = l2 / l1;\n      float ratio  = max(lr, rl);\n      float thresh = lineProximity + 1.0;\n      vClipProximity = (ratio > thresh * thresh) ? 1.0 : 0.0;\n#endif\n\n      // Calculate normals/tangents\n      vec2 nl = normalize(d.xy);\n      vec2 nr = normalize(d.zw);\n\n      // Calculate tangents\n      vec2 tl = vec2(nl.y, -nl.x);\n      vec2 tr = vec2(nr.y, -nr.x);\n\n#ifdef LINE_PROXIMITY\n      // Mix tangents according to leg lengths\n      vec2 tc = normalize(mix(tl, tr, l1/(l1+l2)));\n#else\n      // Average tangent\n      vec2 tc = normalize(tl + tr);\n#endif\n    \n      // Miter join\n      float cosA   = dot(nl, tc);\n      float sinA   = max(0.1, abs(dot(tl, tc)));\n      float factor = cosA / sinA;\n      float scale  = sqrt(1.0 + min(lmin2, factor * factor));\n\n      // Stroke normals\n#ifdef LINE_STROKE\n      vec3 stroke1 = normalize(left - center);\n      vec3 stroke2 = normalize(center - right);\n\n      if (odd) {\n        vClipStrokeEven = stroke1;\n        vClipStrokeOdd  = stroke2;\n      }\n      else {\n        vClipStrokeEven = stroke2;\n        vClipStrokeOdd  = stroke1;\n      }\n#endif\n\n#ifdef LINE_JOIN_MITER\n      // Apply straight up miter\n      join = tc * scale;\n#endif\n\n#ifdef LINE_JOIN_ROUND\n      // Slerp bevel join into circular arc\n      float dotProduct = dot(nl, nr);\n      float angle = acos(dotProduct);\n      float sinT  = sin(angle);\n      join = (sin((1.0 - joint) * angle) * tl + sin(joint * angle) * tr) / sinT;\n#endif\n\n#ifdef LINE_JOIN_BEVEL\n      // Direct bevel join between two flat ends\n      float dotProduct = dot(nl, nr);\n      join = mix(tl, tr, joint);\n#endif\n\n#ifdef LINE_JOIN_DETAIL\n      // Check if on inside or outside of joint\n      float crossProduct = nl.x * nr.y - nl.y * nr.x;\n      if (offset * crossProduct < 0.0) {\n        // For near-180-degree bends, correct back to a miter to avoid discontinuities\n        float ratio = clamp(-dotProduct * 2.0 - 1.0, 0.0, 1.0);\n        // Otherwise collapse the inside vertices into one.\n        join = mix(tc * scale, join, ratio * ratio * ratio);\n      }\n#endif\n\n    }\n    return vec3(join, 0.0);\n  }\n  else {\n    return vec3(0.0);\n  }\n\n}\n\n// Calculate final line position\nvec3 getLinePosition() {\n  vec3 left, center, right, join;\n\n  // left/center/right\n  float edge = line.x;\n  // up/down\n  float offset = line.y;\n\n  // Clip data\n  vec4 p = min(geometryClip, position4);\n  edge += max(0.0, position4.x - geometryClip.x);\n\n  // Get position + adjacent neighbours\n  getLineGeometry(p, edge, left, center, right);\n\n#ifdef LINE_STROKE\n  // Set parameters for line stroke fragment shader\n  vClipStrokePosition = center;\n  vClipStrokeIndex = p.x;\n  bool odd = mod(p.x, 2.0) >= 1.0;\n#else\n  bool odd = true;\n#endif\n\n  // Divide line width up/down\n  float width = lineWidth * 0.5;\n\n  float depth = focusDepth;\n  if (lineDepth < 1.0) {\n    // Depth blending\n    float z = max(0.00001, -center.z);\n    depth = mix(z, focusDepth, lineDepth);\n  }\n  width *= depth;\n\n  // Convert to world units\n  width *= worldUnit;\n\n  // Calculate line join\n  join = getLineJoin(edge, odd, left, center, right, width, offset, joint);\n  vec3 pos = center + join * offset * width;\n\n#ifdef LINE_STROKE\n  vClipStrokeWidth = width;\n#endif\n\n#ifdef LINE_CLIP\n  clipEnds(p, center, pos);\n#endif\n\n  return pos;\n}\n",
-"map.2d.data": "uniform vec2 dataResolution;\nuniform vec2 dataPointer;\n\nvec2 map2DData(vec2 xy) {\n  return (xy + dataPointer) * dataResolution;\n}\n",
-"map.2d.data.wrap": "uniform vec2 dataResolution;\nuniform vec2 dataPointer;\n\nvec2 map2DData(vec2 xy) {\n  return fract((xy + dataPointer) * dataResolution);\n}\n",
-"map.xyzw.2dv": "void mapXyzw2DV(vec4 xyzw, out vec2 xy, out float z) {\n  xy = xyzw.xy;\n  z  = xyzw.z;\n}\n\n",
-"map.xyzw.align": "vec4 alignXYZW(vec4 xyzw) {\n  return floor(xyzw + .5);\n}\n\n",
-"map.xyzw.texture": "uniform float textureItems;\nuniform float textureHeight;\n\nvec2 mapXyzwTexture(vec4 xyzw) {\n  \n  float x = xyzw.x;\n  float y = xyzw.y;\n  float z = xyzw.z;\n  float i = xyzw.w;\n  \n  return vec2(i, y) + vec2(x, z) * vec2(textureItems, textureHeight);\n}\n\n",
-"mesh.fragment.color": "varying vec4 vColor;\n\nvec4 getColor() {\n  return vColor;\n}\n",
-"mesh.fragment.map": "#ifdef POSITION_STPQ\nvarying vec4 vSTPQ;\n#endif\n#ifdef POSITION_U\nvarying float vU;\n#endif\n#ifdef POSITION_UV\nvarying vec2 vUV;\n#endif\n#ifdef POSITION_UVW\nvarying vec3 vUVW;\n#endif\n#ifdef POSITION_UVWO\nvarying vec4 vUVWO;\n#endif\n\nvec4 getSample(vec4 uvwo, vec4 stpq);\n\nvec4 getMapColor() {\n  #ifdef POSITION_STPQ\n  vec4 stpq = vSTPQ;\n  #else\n  vec4 stpq = vec4(0.0);\n  #endif\n\n  #ifdef POSITION_U\n  vec4 uvwo = vec4(vU, 0.0, 0.0, 0.0);\n  #endif\n  #ifdef POSITION_UV\n  vec4 uvwo = vec4(vUV, 0.0, 0.0);\n  #endif\n  #ifdef POSITION_UVW\n  vec4 uvwo = vec4(vUVW, 0.0);\n  #endif\n  #ifdef POSITION_UVWO\n  vec4 uvwo = vec4(vUVWO);\n  #endif\n\n  return getSample(uvwo, stpq);\n}\n",
-"mesh.fragment.mask": "varying float vMask;\n\nfloat ease(float t) {\n  t = clamp(t, 0.0, 1.0);\n  return t * t * (3.0 - 2.0 * t);\n}\n\nvec4 maskColor() {\n  if (vMask <= 0.0) discard;\n  return vec4(vec3(1.0), ease(vMask));\n}\n",
-"mesh.fragment.material": "#ifdef POSITION_STPQ\nvarying vec4 vSTPQ;\n#endif\n#ifdef POSITION_U\nvarying float vU;\n#endif\n#ifdef POSITION_UV\nvarying vec2 vUV;\n#endif\n#ifdef POSITION_UVW\nvarying vec3 vUVW;\n#endif\n#ifdef POSITION_UVWO\nvarying vec4 vUVWO;\n#endif\n\nvec4 getSample(vec4 rgba, vec4 stpq);\n\nvec4 getMaterialColor(vec4 rgba) {\n  vec4 stpq = vec4(0.0);\n\n  #ifdef POSITION_U\n  stpq.x = vU;\n  #endif\n  #ifdef POSITION_UV\n  stpq.xy = vUV;\n  #endif\n  #ifdef POSITION_UVW\n  stpq.xyz = vUVW;\n  #endif\n  #ifdef POSITION_UVWO\n  stpq = vUVWO;\n  #endif\n\n  #ifdef POSITION_STPQ\n  stpq = vSTPQ;\n  #endif\n\n  return getSample(rgba, stpq);\n}\n",
-"mesh.fragment.shaded": "varying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvec3 offSpecular(vec3 color) {\n  vec3 c = 1.0 - color;\n  return 1.0 - c * c;\n}\n\nvec4 getShadedColor(vec4 rgba) {\n  \n  vec3 color = rgba.xyz;\n  vec3 color2 = offSpecular(rgba.xyz);\n\n  vec3 normal = normalize(vNormal);\n  vec3 light = normalize(vLight);\n  vec3 position = normalize(vPosition);\n  \n  float side    = gl_FrontFacing ? -1.0 : 1.0;\n  float cosine  = side * dot(normal, light);\n  float diffuse = mix(max(0.0, cosine), .5 + .5 * cosine, .1);\n  \n  vec3  halfLight = normalize(light + position);\n\tfloat cosineHalf = max(0.0, side * dot(normal, halfLight));\n\tfloat specular = pow(cosineHalf, 16.0);\n\t\n\treturn vec4(color * (diffuse * .9 + .05) + .25 * color2 * specular, rgba.a);\n}\n",
-"mesh.fragment.texture": "",
-"mesh.gamma.in": "vec4 getGammaInColor(vec4 rgba) {\n  return vec4(rgba.rgb * rgba.rgb, rgba.a);\n}\n",
-"mesh.gamma.out": "vec4 getGammaOutColor(vec4 rgba) {\n  return vec4(sqrt(rgba.rgb), rgba.a);\n}\n",
-"mesh.map.uvwo": "vec4 mapUVWO(vec4 uvwo, vec4 stpq) {\n  return uvwo;\n}\n",
-"mesh.position": "uniform vec4 geometryClip;\nattribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getMeshPosition() {\n  vec4 p = min(geometryClip, position4);\n  return getPosition(p, 1.0);\n}\n",
-"mesh.vertex.color": "attribute vec4 position4;\nuniform vec4 geometryClip;\nvarying vec4 vColor;\n\n// External\nvec4 getSample(vec4 xyzw);\n\nvoid vertexColor() {\n  vec4 p = min(geometryClip, position4);\n  vColor = getSample(p);\n}\n",
-"mesh.vertex.mask": "attribute vec4 position4;\nuniform vec4 geometryResolution;\nuniform vec4 geometryClip;\nvarying float vMask;\n\n// External\nfloat getSample(vec4 xyzw);\n\nvoid maskLevel() {\n  vec4 p = min(geometryClip, position4);\n  vMask = getSample(p * geometryResolution);\n}\n",
-"mesh.vertex.position": "uniform vec4 geometryResolution;\n\n#ifdef POSITION_STPQ\nvarying vec4 vSTPQ;\n#endif\n#ifdef POSITION_U\nvarying float vU;\n#endif\n#ifdef POSITION_UV\nvarying vec2 vUV;\n#endif\n#ifdef POSITION_UVW\nvarying vec3 vUVW;\n#endif\n#ifdef POSITION_UVWO\nvarying vec4 vUVWO;\n#endif\n\n// External\nvec3 getPosition(vec4 xyzw, in vec4 stpqIn, out vec4 stpqOut);\n\nvec3 getMeshPosition(vec4 xyzw, float canonical) {\n  vec4 stpqOut, stpqIn = xyzw * geometryResolution;\n  vec3 xyz = getPosition(xyzw, stpqIn, stpqOut);\n\n  #ifdef POSITION_MAP\n  if (canonical > 0.5) {\n    #ifdef POSITION_STPQ\n    vSTPQ = stpqOut;\n    #endif\n    #ifdef POSITION_U\n    vU = stpqOut.x;\n    #endif\n    #ifdef POSITION_UV\n    vUV = stpqOut.xy;\n    #endif\n    #ifdef POSITION_UVW\n    vUVW = stpqOut.xyz;\n    #endif\n    #ifdef POSITION_UVWO\n    vUVWO = stpqOut;\n    #endif\n  }\n  #endif\n  return xyz;\n}\n",
-"move.position": "uniform float transitionEnter;\nuniform float transitionExit;\nuniform vec4  transitionScale;\nuniform vec4  transitionBias;\nuniform float transitionSkew;\nuniform float transitionActive;\n\nuniform vec4  moveFrom;\nuniform vec4  moveTo;\n\nfloat ease(float t) {\n  t = clamp(t, 0.0, 1.0);\n  return 1.0 - (2.0 - t) * t;\n}\n\nvec4 getTransitionPosition(vec4 xyzw, inout vec4 stpq) {\n  if (transitionActive < 0.5) return xyzw;\n\n  float enter   = transitionEnter;\n  float exit    = transitionExit;\n  float skew    = transitionSkew;\n  vec4  scale   = transitionScale;\n  vec4  bias    = transitionBias;\n\n  float factor  = 1.0 + skew;\n  float offset  = dot(vec4(1.0), stpq * scale + bias);\n\n  float a1 = ease(enter * factor - offset);\n  float a2 = ease(exit  * factor + offset - skew);\n\n  return xyzw + a1 * moveFrom + a2 * moveTo;\n}",
-"object.mask.default": "vec4 getMask(vec4 xyzw) {\n  return vec4(1.0);\n}",
-"point.alpha.circle": "varying float vPixelSize;\n\nfloat getDiscAlpha(float mask) {\n  // Approximation: 1 - x*x is approximately linear around x = 1 with slope 2\n  return vPixelSize * (1.0 - mask);\n  //  return vPixelSize * 2.0 * (1.0 - sqrt(mask));\n}\n",
-"point.alpha.circle.hollow": "varying float vPixelSize;\n\nfloat getDiscHollowAlpha(float mask) {\n  return vPixelSize * (0.5 - 2.0 * abs(sqrt(mask) - .75));\n}\n",
-"point.alpha.generic": "varying float vPixelSize;\n\nfloat getGenericAlpha(float mask) {\n  return vPixelSize * 2.0 * (1.0 - mask);\n}\n",
-"point.alpha.generic.hollow": "varying float vPixelSize;\n\nfloat getGenericHollowAlpha(float mask) {\n  return vPixelSize * (0.5 - 2.0 * abs(mask - .75));\n}\n",
-"point.edge": "varying vec2 vSprite;\n\nfloat getSpriteMask(vec2 xy);\nfloat getSpriteAlpha(float mask);\n\nvoid setFragmentColorFill(vec4 color) {\n  float mask = getSpriteMask(vSprite);\n  if (mask > 1.0) {\n    discard;\n  }\n  float alpha = getSpriteAlpha(mask);\n  if (alpha >= 1.0) {\n    discard;\n  }\n  gl_FragColor = vec4(color.rgb, alpha * color.a);\n}\n",
-"point.fill": "varying vec2 vSprite;\n\nfloat getSpriteMask(vec2 xy);\nfloat getSpriteAlpha(float mask);\n\nvoid setFragmentColorFill(vec4 color) {\n  float mask = getSpriteMask(vSprite);\n  if (mask > 1.0) {\n    discard;\n  }\n  float alpha = getSpriteAlpha(mask);\n  if (alpha < 1.0) {\n    discard;\n  }\n  gl_FragColor = color;\n}\n\n",
-"point.mask.circle": "varying float vPixelSize;\n\nfloat getCircleMask(vec2 uv) {\n  return dot(uv, uv);\n}\n",
-"point.mask.diamond": "varying float vPixelSize;\n\nfloat getDiamondMask(vec2 uv) {\n  vec2 a = abs(uv);\n  return a.x + a.y;\n}\n",
-"point.mask.down": "varying float vPixelSize;\n\nfloat getTriangleDownMask(vec2 uv) {\n  uv.y += .25;\n  return max(uv.y, abs(uv.x) * .866 - uv.y * .5 + .6);\n}\n",
-"point.mask.left": "varying float vPixelSize;\n\nfloat getTriangleLeftMask(vec2 uv) {\n  uv.x += .25;\n  return max(uv.x, abs(uv.y) * .866 - uv.x * .5 + .6);\n}\n",
-"point.mask.right": "varying float vPixelSize;\n\nfloat getTriangleRightMask(vec2 uv) {\n  uv.x -= .25;\n  return max(-uv.x, abs(uv.y) * .866 + uv.x * .5 + .6);\n}\n",
-"point.mask.square": "varying float vPixelSize;\n\nfloat getSquareMask(vec2 uv) {\n  vec2 a = abs(uv);\n  return max(a.x, a.y);\n}\n",
-"point.mask.up": "varying float vPixelSize;\n\nfloat getTriangleUpMask(vec2 uv) {\n  uv.y -= .25;\n  return max(-uv.y, abs(uv.x) * .866 + uv.y * .5 + .6);\n}\n",
-"point.position": "uniform float pointDepth;\n\nuniform float pixelUnit;\nuniform float renderScale;\nuniform float renderScaleInv;\nuniform float focusDepth;\n\nuniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec2 sprite;\n\nvarying vec2 vSprite;\nvarying float vPixelSize;\n\nconst float pointScale = POINT_SHAPE_SCALE;\n\n// External\nfloat getPointSize(vec4 xyzw);\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getPointPosition() {\n  vec4 p = min(geometryClip, position4);\n  vec3 center = getPosition(p, 1.0);\n\n  // Depth blending\n  // TODO: orthographic camera\n  // Workaround: set depth = 0\n  float z = -center.z;\n  float depth = mix(z, focusDepth, pointDepth);\n  \n  // Match device/unit mapping \n  // Sprite goes from -1..1, width = 2.\n  float pointSize = getPointSize(p);\n  float size = pointScale * pointSize * pixelUnit * .5;\n  float depthSize = depth * size;\n  \n  // Pad sprite by half a pixel to make the anti-aliasing straddle the pixel edge\n  // Note: pixelsize measures radius\n  float pixelSize = .5 * (pointDepth > 0.0 ? depthSize / z : size);\n  float paddedSize = pixelSize + 0.5;\n  float padFactor = paddedSize / pixelSize;\n\n  vPixelSize = paddedSize;\n  vSprite    = sprite;\n\n  return center + vec3(sprite * depthSize * renderScaleInv * padFactor, 0.0);\n}\n",
-"point.size.uniform": "uniform float pointSize;\n\nfloat getPointSize(vec4 xyzw) {\n  return pointSize;\n}",
-"point.size.varying": "uniform float pointSize;\n\nvec4 getSample(vec4 xyzw);\n\nfloat getPointSize(vec4 xyzw) {\n  return pointSize * getSample(xyzw).x;\n}",
-"polar.position": "uniform float polarBend;\nuniform float polarFocus;\nuniform float polarAspect;\nuniform float polarHelix;\n\nuniform mat4 viewMatrix;\n\nvec4 getPolarPosition(vec4 position, inout vec4 stpq) {\n  if (polarBend > 0.0) {\n\n    if (polarBend < 0.001) {\n      // Factor out large addition/subtraction of polarFocus\n      // to avoid numerical error\n      // sin(x) ~ x\n      // cos(x) ~ 1 - x * x / 2\n      vec2 pb = position.xy * polarBend;\n      float ppbbx = pb.x * pb.x;\n      return viewMatrix * vec4(\n        position.x * (1.0 - polarBend + (pb.y * polarAspect)),\n        position.y * (1.0 - .5 * ppbbx) - (.5 * ppbbx) * polarFocus / polarAspect,\n        position.z + position.x * polarHelix * polarBend,\n        1.0\n      );\n    }\n    else {\n      vec2 xy = position.xy * vec2(polarBend, polarAspect);\n      float radius = polarFocus + xy.y;\n      return viewMatrix * vec4(\n        sin(xy.x) * radius,\n        (cos(xy.x) * radius - polarFocus) / polarAspect,\n        position.z + position.x * polarHelix * polarBend,\n        1.0\n      );\n    }\n  }\n  else {\n    return viewMatrix * vec4(position.xyz, 1.0);\n  }\n}",
-"project.position": "uniform float styleZBias;\nuniform float styleZIndex;\n\nvoid setPosition(vec3 position) {\n  vec4 pos = projectionMatrix * vec4(position, 1.0);\n\n  // Apply relative Z bias\n  float bias  = (1.0 - styleZBias / 32768.0);\n  pos.z *= bias;\n  \n  // Apply large scale Z index changes\n  if (styleZIndex > 0.0) {\n    float z = pos.z / pos.w;\n    pos.z = ((z + 1.0) / (styleZIndex + 1.0) - 1.0) * pos.w;\n  }\n  \n  gl_Position = pos;\n}",
-"project.readback": "// This is three.js' global uniform, missing from fragment shaders.\nuniform mat4 projectionMatrix;\n\nvec4 readbackPosition(vec3 position, vec4 stpq) {\n  vec4 pos = projectionMatrix * vec4(position, 1.0);\n  vec3 final = pos.xyz / pos.w;\n  if (final.z < -1.0) {\n    return vec4(0.0, 0.0, 0.0, -1.0);\n  }\n  else {\n    return vec4(final, -position.z);\n  }\n}\n",
-"raw.position.scale": "uniform vec4 geometryScale;\nattribute vec4 position4;\n\nvec4 getRawPositionScale() {\n  return geometryScale * position4;\n}\n",
-"repeat.position": "uniform vec4 repeatModulus;\n\nvec4 getRepeatXYZW(vec4 xyzw) {\n  return mod(xyzw + .5, repeatModulus) - .5;\n}\n",
-"resample.padding": "uniform vec4 resampleBias;\n\nvec4 resamplePadding(vec4 xyzw) {\n  return xyzw + resampleBias;\n}",
-"resample.relative": "uniform vec4 resampleFactor;\n\nvec4 resampleRelative(vec4 xyzw) {\n  return xyzw * resampleFactor;\n}",
-"reveal.mask": "uniform float transitionEnter;\nuniform float transitionExit;\nuniform vec4  transitionScale;\nuniform vec4  transitionBias;\nuniform float transitionSkew;\nuniform float transitionActive;\n\nfloat getTransitionSDFMask(vec4 stpq) {\n  if (transitionActive < 0.5) return 1.0;\n\n  float enter   = transitionEnter;\n  float exit    = transitionExit;\n  float skew    = transitionSkew;\n  vec4  scale   = transitionScale;\n  vec4  bias    = transitionBias;\n\n  float factor  = 1.0 + skew;\n  float offset  = dot(vec4(1.0), stpq * scale + bias);\n\n  vec2 d = vec2(enter, exit) * factor + vec2(-offset, offset - skew);\n  if (exit  == 1.0) return d.x;\n  if (enter == 1.0) return d.y;\n  return min(d.x, d.y);\n}",
-"root.position": "vec3 getRootPosition(vec4 position, in vec4 stpqIn, out vec4 stpqOut) {\n  stpqOut = stpqIn; // avoid inout confusion\n  return position.xyz;\n}",
-"sample.2d": "uniform sampler2D dataTexture;\n\nvec4 sample2D(vec2 uv) {\n  return texture2D(dataTexture, uv);\n}\n",
-"scale.position": "uniform vec4 scaleAxis;\nuniform vec4 scaleOffset;\n\nvec4 sampleData(float x);\n\nvec4 getScalePosition(vec4 xyzw) {\n  return scaleAxis * sampleData(xyzw.x).x + scaleOffset;\n}\n",
-"screen.map.stpq": "uniform vec4 remapSTPQScale;\n\nvec4 screenMapSTPQ(vec4 xyzw, out vec4 stpq) {\n  stpq = xyzw * remapSTPQScale;\n  return xyzw;\n}\n",
-"screen.map.xy": "uniform vec2 remapUVScale;\n\nvec4 screenMapXY(vec4 uvwo, vec4 stpq) {\n  return vec4(floor(remapUVScale * uvwo.xy), 0.0, 0.0);\n}\n",
-"screen.map.xyzw": "uniform vec2 remapUVScale;\nuniform vec2 remapModulus;\nuniform vec2 remapModulusInv;\n\nvec4 screenMapXYZW(vec4 uvwo, vec4 stpq) {\n  vec2 st = floor(remapUVScale * uvwo.xy);\n  vec2 xy = st * remapModulusInv;\n  vec2 ixy = floor(xy);\n  vec2 fxy = xy - ixy;\n  vec2 zw = fxy * remapModulus;\n  return vec4(ixy.x, zw.y, ixy.y, zw.x);\n}\n",
-"screen.pass.uv": "vec2 screenPassUV(vec4 uvwo, vec4 stpq) {\n  return uvwo.xy;\n}\n",
-"screen.position": "void setScreenPosition(vec4 position) {\n  gl_Position = vec4(position.xy * 2.0 - 1.0, 0.5, 1.0);\n}\n",
-"slice.position": "uniform vec4 sliceOffset;\n\nvec4 getSliceOffset(vec4 xyzw) {\n  return xyzw + sliceOffset;\n}\n",
-"spherical.position": "uniform float sphericalBend;\nuniform float sphericalFocus;\nuniform float sphericalAspectX;\nuniform float sphericalAspectY;\nuniform float sphericalScaleY;\n\nuniform mat4 viewMatrix;\n\nvec4 getSphericalPosition(vec4 position, inout vec4 stpq) {\n  if (sphericalBend > 0.0001) {\n\n    vec3 xyz = position.xyz * vec3(sphericalBend, sphericalBend / sphericalAspectY * sphericalScaleY, sphericalAspectX);\n    float radius = sphericalFocus + xyz.z;\n    float cosine = cos(xyz.y) * radius;\n\n    return viewMatrix * vec4(\n      sin(xyz.x) * cosine,\n      sin(xyz.y) * radius * sphericalAspectY,\n      (cos(xyz.x) * cosine - sphericalFocus) / sphericalAspectX,\n      1.0\n    );\n  }\n  else {\n    return viewMatrix * vec4(position.xyz, 1.0);\n  }\n}",
-"split.position": "uniform float splitStride;\n\nvec2 getIndices(vec4 xyzw);\nvec4 getRest(vec4 xyzw);\nvec4 injectIndex(float v);\n\nvec4 getSplitXYZW(vec4 xyzw) {\n  vec2 uv = getIndices(xyzw);\n  float offset = uv.x + uv.y * splitStride;\n  return injectIndex(offset) + getRest(xyzw);\n}\n",
-"spread.position": "uniform vec4 spreadOffset;\nuniform mat4 spreadMatrix;\n\n// External\nvec4 getSample(vec4 xyzw);\n\nvec4 getSpreadSample(vec4 xyzw) {\n  vec4 sample = getSample(xyzw);\n  return sample + spreadMatrix * (spreadOffset + xyzw);\n}\n",
-"sprite.fragment": "varying vec2 vSprite;\n\nvec4 getSample(vec2 xy);\n\nvec4 getSpriteColor() {\n  return getSample(vSprite);\n}",
-"sprite.position": "uniform vec2 spriteOffset;\nuniform float spriteScale;\nuniform float spriteDepth;\nuniform float spriteSnap;\n\nuniform vec2 renderOdd;\nuniform float renderScale;\nuniform float renderScaleInv;\nuniform float pixelUnit;\nuniform float focusDepth;\n\nuniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec2 sprite;\n\nvarying float vPixelSize;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\nvec4 getSprite(vec4 xyzw);\n\nvec3 getSpritePosition() {\n  // Clip points\n  vec4 p = min(geometryClip, position4);\n  float diff = length(position4 - p);\n  if (diff > 0.0) {\n    return vec3(0.0, 0.0, 1000.0);\n  }\n\n  // Make sprites\n  vec3 center = getPosition(p, 1.0);\n  vec4 atlas = getSprite(p);\n\n  // Sprite goes from -1..1, width = 2.\n  // -1..1 -> -0.5..0.5\n  vec2 halfSprite = sprite * .5;\n  vec2 halfFlipSprite = vec2(halfSprite.x, -halfSprite.y);\n\n#ifdef POSITION_UV\n  // Assign UVs\n  vUV = atlas.xy + atlas.zw * (halfFlipSprite + .5);\n#endif\n\n  // Depth blending\n  // TODO: orthographic camera\n  // Workaround: set depth = 0\n  float depth = focusDepth, z;\n  z = -center.z;\n  if (spriteDepth < 1.0) {\n    depth = mix(z, focusDepth, spriteDepth);\n  }\n  \n  // Match device/unit mapping \n  float size = pixelUnit * spriteScale;\n  float depthSize = depth * size;\n\n  // Calculate pixelSize for anti-aliasing\n  float pixelSize = (spriteDepth > 0.0 ? depthSize / z : size);\n  vPixelSize = pixelSize;\n\n  // Position sprite\n  vec2 atlasOdd = fract(atlas.zw / 2.0);\n  vec2 offset = (spriteOffset + halfSprite * atlas.zw) * depthSize;\n  if (spriteSnap > 0.5) {\n    // Snap to pixel (w/ epsilon shift to avoid jitter)\n    return vec3(((floor(center.xy / center.z * renderScale + 0.001) + renderOdd + atlasOdd) * center.z + offset) * renderScaleInv, center.z);\n  }\n  else {\n    // Place directly\n    return center + vec3(offset * renderScaleInv, 0.0);\n  }\n\n}\n",
-"stereographic.position": "uniform float stereoBend;\n\nuniform mat4 viewMatrix;\n\nvec4 getStereoPosition(vec4 position, inout vec4 stpq) {\n  if (stereoBend > 0.0001) {\n\n    vec3 pos = position.xyz;\n    float r = length(pos);\n    float z = r + pos.z;\n    vec3 project = vec3(pos.xy / z, r);\n    \n    vec3 lerped = mix(pos, project, stereoBend);\n\n    return viewMatrix * vec4(lerped, 1.0);\n  }\n  else {\n    return viewMatrix * vec4(position.xyz, 1.0);\n  }\n}",
-"stereographic4.position": "uniform float stereoBend;\nuniform vec4 basisScale;\nuniform vec4 basisOffset;\nuniform mat4 viewMatrix;\nuniform vec2 view4D;\n\nvec4 getStereographic4Position(vec4 position, inout vec4 stpq) {\n  \n  vec4 transformed;\n  if (stereoBend > 0.0001) {\n\n    float r = length(position);\n    float w = r + position.w;\n    vec4 project = vec4(position.xyz / w, r);\n    \n    transformed = mix(position, project, stereoBend);\n  }\n  else {\n    transformed = position;\n  }\n\n  vec4 pos4 = transformed * basisScale - basisOffset;\n  vec3 xyz = (viewMatrix * vec4(pos4.xyz, 1.0)).xyz;\n  return vec4(xyz, pos4.w * view4D.y + view4D.x);\n}\n",
-"stpq.sample.2d": "varying vec2 vST;\n\nvec4 getSample(vec2 st);\n\nvec4 getSTSample() {\n  return getSample(vST);\n}\n",
-"stpq.xyzw.2d": "varying vec2 vUV;\n\nvoid setRawUV(vec4 xyzw) {\n  vUV = xyzw.xy;\n}\n",
-"strip.position.normal": "uniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec3 strip;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvarying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvoid getStripGeometry(vec4 xyzw, vec3 strip, out vec3 pos, out vec3 normal) {\n  vec3 a, b, c;\n\n  a   = getPosition(xyzw, 1.0);\n  b   = getPosition(vec4(xyzw.xyz, strip.x), 0.0);\n  c   = getPosition(vec4(xyzw.xyz, strip.y), 0.0);\n\n  normal = normalize(cross(c - a, b - a)) * strip.z;\n  \n  pos = a;\n}\n\nvec3 getStripPositionNormal() {\n  vec3 center, normal;\n\n  vec4 p = min(geometryClip, position4);\n\n  getStripGeometry(p, strip, center, normal);\n  vNormal   = normal;\n  vLight    = normalize((viewMatrix * vec4(1.0, 2.0, 2.0, 0.0)).xyz);\n  vPosition = -center;\n\n  return center;\n}\n",
-"style.color": "uniform vec3 styleColor;\nuniform float styleOpacity;\n\nvec4 getStyleColor() {\n  return vec4(styleColor, styleOpacity);\n}\n",
-"subdivide.depth": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideDepth(vec4 xyzw) {\n  float x = xyzw.z;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(xyzw.xy, i + g, xyzw.w));\n}\n",
-"subdivide.depth.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideDepthLerp(vec4 xyzw) {\n  float x = xyzw.z;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(xyzw.xy, i, xyzw.w);\n  vec4 xyzw2 = vec4(xyzw.xy, i + 1.0, xyzw.w);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
-"subdivide.height": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideHeight(vec4 xyzw) {\n  float x = xyzw.y;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(xyzw.x, i + g, xyzw.zw));\n}\n",
-"subdivide.height.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideHeightLerp(vec4 xyzw) {\n  float x = xyzw.y;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(xyzw.x, i, xyzw.zw);\n  vec4 xyzw2 = vec4(xyzw.x, i + 1.0, xyzw.zw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
-"subdivide.items": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideItems(vec4 xyzw) {\n  float x = xyzw.w;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(xyzw.xyz, i + g));\n}\n",
-"subdivide.items.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideItemsLerp(vec4 xyzw) {\n  float x = xyzw.w;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(xyzw.xyz, i);\n  vec4 xyzw2 = vec4(xyzw.xyz, i + 1.0);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
-"subdivide.width": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideWidth(vec4 xyzw) {\n  float x = xyzw.x;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(i + g, xyzw.yzw));\n}\n",
-"subdivide.width.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideWidthLerp(vec4 xyzw) {\n  float x = xyzw.x;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(i, xyzw.yzw);\n  vec4 xyzw2 = vec4(i + 1.0, xyzw.yzw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
-"surface.mask.hollow": "attribute vec4 position4;\n\nfloat getSurfaceHollowMask(vec4 xyzw) {\n  vec4 df = abs(fract(position4) - .5);\n  vec2 df2 = min(df.xy, df.zw);\n  float df3 = min(df2.x, df2.y);\n  return df3;\n}",
-"surface.position": "uniform vec4 geometryClip;\nuniform vec4 geometryResolution;\nuniform vec4 mapSize;\n\nattribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getSurfacePosition() {\n  vec4 p = min(geometryClip, position4);\n  vec3 xyz = getPosition(p, 1.0);\n\n  // Overwrite UVs\n#ifdef POSITION_UV\n#ifdef POSITION_UV_INT\n  vUV = -.5 + (position4.xy * geometryResolution.xy) * mapSize.xy;\n#else\n  vUV = position4.xy * geometryResolution.xy;\n#endif\n#endif\n\n  return xyz;\n}\n",
-"surface.position.normal": "uniform vec4 mapSize;\nuniform vec4 geometryResolution;\nuniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec2 surface;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvoid getSurfaceGeometry(vec4 xyzw, float edgeX, float edgeY, out vec3 left, out vec3 center, out vec3 right, out vec3 up, out vec3 down) {\n  vec4 deltaX = vec4(1.0, 0.0, 0.0, 0.0);\n  vec4 deltaY = vec4(0.0, 1.0, 0.0, 0.0);\n\n  /*\n  // high quality, 5 tap\n  center =                  getPosition(xyzw, 1.0);\n  left   = (edgeX > -0.5) ? getPosition(xyzw - deltaX, 0.0) : center;\n  right  = (edgeX < 0.5)  ? getPosition(xyzw + deltaX, 0.0) : center;\n  down   = (edgeY > -0.5) ? getPosition(xyzw - deltaY, 0.0) : center;\n  up     = (edgeY < 0.5)  ? getPosition(xyzw + deltaY, 0.0) : center;\n  */\n  \n  // low quality, 3 tap\n  center =                  getPosition(xyzw, 1.0);\n  left   =                  center;\n  down   =                  center;\n  right  = (edgeX < 0.5)  ? getPosition(xyzw + deltaX, 0.0) : (2.0 * center - getPosition(xyzw - deltaX, 0.0));\n  up     = (edgeY < 0.5)  ? getPosition(xyzw + deltaY, 0.0) : (2.0 * center - getPosition(xyzw - deltaY, 0.0));\n}\n\nvec3 getSurfaceNormal(vec3 left, vec3 center, vec3 right, vec3 up, vec3 down) {\n  vec3 dx = right - left;\n  vec3 dy = up    - down;\n  vec3 n = cross(dy, dx);\n  if (length(n) > 0.0) {\n    return normalize(n);\n  }\n  return vec3(0.0, 1.0, 0.0);\n}\n\nvarying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvec3 getSurfacePositionNormal() {\n  vec3 left, center, right, up, down;\n\n  vec4 p = min(geometryClip, position4);\n\n  getSurfaceGeometry(p, surface.x, surface.y, left, center, right, up, down);\n  vNormal   = getSurfaceNormal(left, center, right, up, down);\n  vLight    = normalize((viewMatrix * vec4(1.0, 2.0, 2.0, 0.0)).xyz); // hardcoded directional light\n  vPosition = -center;\n\n#ifdef POSITION_UV\n#ifdef POSITION_UV_INT\n  vUV = -.5 + (position4.xy * geometryResolution.xy) * mapSize.xy;\n#else\n  vUV = position4.xy * geometryResolution.xy;\n#endif\n#endif\n  \n  return center;\n}\n",
-"ticks.position": "uniform float worldUnit;\nuniform float focusDepth;\nuniform float tickSize;\nuniform float tickEpsilon;\nuniform vec3  tickNormal;\nuniform vec2  tickStrip;\n\nvec4 getSample(vec4 xyzw);\n\nvec3 transformPosition(vec4 position, in vec4 stpqIn, out vec4 stpqOut);\n\nvec3 getTickPosition(vec4 xyzw, in vec4 stpqIn, out vec4 stpqOut) {\n  float epsilon = tickEpsilon;\n\n  // determine tick direction\n  float leftX  = max(tickStrip.x, xyzw.y - 1.0);\n  float rightX = min(tickStrip.y, xyzw.y + 1.0);\n  \n  vec4 left    = getSample(vec4(leftX,  xyzw.zw, 0.0));\n  vec4 right   = getSample(vec4(rightX, xyzw.zw, 0.0));\n  vec4 diff    = right - left;\n\n  vec3 normal  = cross(normalize(diff.xyz + vec3(diff.w)), tickNormal);\n  float bias   = max(0.0, 1.0 - length(normal) * 2.0);\n       normal  = mix(normal, tickNormal.yzx, bias * bias);\n  \n  // transform (point) and (point + delta)\n  vec4 center  = getSample(vec4(xyzw.yzw, 0.0));\n  vec4 delta   = vec4(normal, 0.0) * epsilon;\n\n  vec4 a = center;\n  vec4 b = center + delta;\n\n  vec4 _;\n  vec3 c = transformPosition(a, stpqIn, stpqOut);\n  vec3 d = transformPosition(b, stpqIn, _);\n  \n  // sample on either side to create line\n  float line = xyzw.x - .5;\n  vec3  mid  = c;\n  vec3  side = normalize(d - c);\n\n  return mid + side * line * tickSize * worldUnit * focusDepth;\n}\n",
-"transform3.position": "uniform mat4 transformMatrix;\n\nvec4 transformPosition(vec4 position, inout vec4 stpq) {\n  return transformMatrix * vec4(position.xyz, 1.0);\n}\n",
-"transform4.position": "uniform mat4 transformMatrix;\nuniform vec4 transformOffset;\n\nvec4 transformPosition(vec4 position, inout vec4 stpq) {\n  return transformMatrix * position + transformOffset;\n}\n",
-"view.position": "// Implicit three.js uniform\n// uniform mat4 viewMatrix;\n\nvec4 getViewPosition(vec4 position, inout vec4 stpq) {\n  return (viewMatrix * vec4(position.xyz, 1.0));\n}\n"};
+"use strict";
+
+module.exports = { "arrow.position": "uniform float worldUnit;\nuniform float lineDepth;\nuniform float lineWidth;\nuniform float focusDepth;\n\nuniform vec4 geometryClip;\nuniform float arrowSize;\nuniform float arrowSpace;\n\nattribute vec4 position4;\nattribute vec3 arrow;\nattribute vec2 attach;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvoid getArrowGeometry(vec4 xyzw, float near, float far, out vec3 left, out vec3 right, out vec3 start) {\n  right = getPosition(xyzw, 1.0);\n  left  = getPosition(vec4(near, xyzw.yzw), 0.0);\n  start = getPosition(vec4(far, xyzw.yzw), 0.0);\n}\n\nmat4 getArrowMatrix(vec3 left, vec3 right, vec3 start) {\n\n  float depth = focusDepth;\n  if (lineDepth < 1.0) {\n    // Depth blending\n    float z = max(0.00001, -right.z);\n    depth = mix(z, focusDepth, lineDepth);\n  }\n    \n  vec3 diff = left - right;\n  float l = length(diff);\n  if (l == 0.0) {\n    return mat4(1.0, 0.0, 0.0, 0.0,\n                0.0, 1.0, 0.0, 0.0,\n                0.0, 0.0, 1.0, 0.0,\n                0.0, 0.0, 0.0, 1.0);\n  }\n\n  // Construct TBN matrix around shaft\n  vec3 t = normalize(diff);\n  vec3 n = normalize(cross(t, t.yzx + vec3(.1, .2, .3)));\n  vec3 b = cross(n, t);\n  \n  // Shrink arrows when vector gets too small\n  // Approach linear scaling with cubic ease the smaller we get\n  float size = arrowSize * lineWidth * worldUnit * depth * 1.25;\n  diff = right - start;\n  l = length(diff) * arrowSpace;\n  float mini = clamp(1.0 - l / size * .333, 0.0, 1.0);\n  float scale = 1.0 - mini * mini * mini;\n  float range = size * scale;\n  \n  // Size to 2.5:1 ratio\n  float rangeNB = range / 2.5;\n\n  // Anchor at end position\n  return mat4(vec4(n * rangeNB,  0),\n              vec4(b * rangeNB,  0),\n              vec4(t * range, 0),\n              vec4(right,  1.0));\n}\n\nvec3 getArrowPosition() {\n  vec3 left, right, start;\n  \n  vec4 p = min(geometryClip, position4);\n  \n  getArrowGeometry(p, attach.x, attach.y, left, right, start);\n  mat4 matrix = getArrowMatrix(left, right, start);\n  return (matrix * vec4(arrow.xyz, 1.0)).xyz;\n\n}\n",
+  "axis.position": "uniform vec4 axisStep;\nuniform vec4 axisPosition;\n\nvec4 getAxisPosition(vec4 xyzw, inout vec4 stpq) {\n  return axisStep * xyzw.x + axisPosition;\n}\n",
+  "cartesian.position": "uniform mat4 viewMatrix;\n\nvec4 getCartesianPosition(vec4 position, inout vec4 stpq) {\n  return viewMatrix * vec4(position.xyz, 1.0);\n}\n",
+  "cartesian4.position": "uniform vec4 basisScale;\nuniform vec4 basisOffset;\nuniform vec4 viewScale;\nuniform vec4 viewOffset;\n\nvec4 getCartesian4Position(vec4 position, inout vec4 stpq) {\n  return position * basisScale + basisOffset;\n}\n",
+  "clamp.position": "uniform vec4 clampLimit;\n\nvec4 getClampXYZW(vec4 xyzw) {\n  return clamp(xyzw, vec4(0.0), clampLimit);\n}\n",
+  "color.opaque": "vec4 opaqueColor(vec4 color) {\n  return vec4(color.rgb, 1.0);\n}\n",
+  "face.position": "uniform vec4 geometryClip;\nattribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getFacePosition() {\n  vec4 p = min(geometryClip, position4);\n  return getPosition(p, 1.0);\n}\n",
+  "face.position.normal": "attribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvarying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvoid getFaceGeometry(vec4 xyzw, out vec3 pos, out vec3 normal) {\n  vec3 a, b, c;\n\n  a   = getPosition(vec4(xyzw.xyz, 0.0), 0.0);\n  b   = getPosition(vec4(xyzw.xyz, 1.0), 0.0);\n  c   = getPosition(vec4(xyzw.xyz, 2.0), 0.0);\n\n  pos = getPosition(xyzw, 1.0);\n  normal = normalize(cross(c - a, b - a));\n}\n\nvec3 getFacePositionNormal() {\n  vec3 center, normal;\n\n  getFaceGeometry(position4, center, normal);\n  vNormal   = normal;\n  vLight    = normalize((viewMatrix * vec4(1.0, 2.0, 2.0, 0.0)).xyz);\n  vPosition = -center;\n\n  return center;\n}\n",
+  "float.encode": "/*\nFloat encoding technique by\nCarlos Scheidegger\nhttps://github.com/cscheid/lux/blob/master/src/shade/bits/encode_float.js\n\nConversion to GLSL by:\nhttp://concord-consortium.github.io/lab/experiments/webgl-gpgpu/script.js\n*/\n\nfloat shift_right(float v, float amt) { \n  v = floor(v) + 0.5; \n  return floor(v / exp2(amt)); \n}\n\nfloat shift_left(float v, float amt) { \n  return floor(v * exp2(amt) + 0.5); \n}\n\nfloat mask_last(float v, float bits) { \n  return mod(v, shift_left(1.0, bits)); \n}\n\nfloat extract_bits(float num, float from, float to) { \n  from = floor(from + 0.5); to = floor(to + 0.5); \n  return mask_last(shift_right(num, from), to - from); \n}\n\nvec4 encode_float(float val) { \n  if (val == 0.0) return vec4(0, 0, 0, 0); \n  float valuesign = val > 0.0 ? 0.0 : 1.0; \n  val = abs(val); \n  float exponent = floor(log2(val)); \n  float biased_exponent = exponent + 127.0; \n  float fraction = ((val / exp2(exponent)) - 1.0) * 8388608.0; \n  float t = biased_exponent / 2.0; \n  float last_bit_of_biased_exponent = fract(t) * 2.0; \n  float remaining_bits_of_biased_exponent = floor(t); \n  float byte4 = extract_bits(fraction, 0.0, 8.0) / 255.0; \n  float byte3 = extract_bits(fraction, 8.0, 16.0) / 255.0; \n  float byte2 = (last_bit_of_biased_exponent * 128.0 + extract_bits(fraction, 16.0, 23.0)) / 255.0; \n  float byte1 = (valuesign * 128.0 + remaining_bits_of_biased_exponent) / 255.0; \n  return vec4(byte4, byte3, byte2, byte1); \n}\n",
+  "float.index.pack": "uniform vec4 indexModulus;\n\nvec4 getSample(vec4 xyzw);\nvec4 getIndex(vec4 xyzw);\n\nvec4 floatPackIndex(vec4 xyzw) {\n  vec4 value = getSample(xyzw);\n  vec4 index = getIndex(xyzw);\n\n  vec4 offset = floor(index + .5) * indexModulus;\n  vec2 sum2 = offset.xy + offset.zw;\n  float sum = sum2.x + sum2.y;\n  return vec4(value.xyz, sum);\n}",
+  "float.stretch": "vec4 getSample(vec4 xyzw);\n\nfloat floatStretch(vec4 xyzw, float channelIndex) {\n  vec4 sample = getSample(xyzw);\n  vec2 xy = channelIndex > 1.5 ? sample.zw : sample.xy;\n  return mod(channelIndex, 2.0) > .5 ? xy.y : xy.x;\n}",
+  "fragment.clip.dashed": "varying float vClipStrokeWidth;\nvarying float vClipStrokeIndex;\nvarying vec3  vClipStrokeEven;\nvarying vec3  vClipStrokeOdd;\nvarying vec3  vClipStrokePosition;\n\nvoid clipStrokeFragment() {\n  bool odd = mod(vClipStrokeIndex, 2.0) >= 1.0;\n\n  vec3 tangent;\n  if (odd) {\n    tangent = vClipStrokeOdd;\n  }\n  else {\n    tangent = vClipStrokeEven;\n  }\n\n  float travel = dot(vClipStrokePosition, normalize(tangent)) / vClipStrokeWidth;\n  if (mod(travel, 16.0) > 8.0) {\n    discard;\n  }\n}\n",
+  "fragment.clip.dotted": "varying float vClipStrokeWidth;\nvarying float vClipStrokeIndex;\nvarying vec3  vClipStrokeEven;\nvarying vec3  vClipStrokeOdd;\nvarying vec3  vClipStrokePosition;\n\nvoid clipStrokeFragment() {\n  bool odd = mod(vClipStrokeIndex, 2.0) >= 1.0;\n\n  vec3 tangent;\n  if (odd) {\n    tangent = vClipStrokeOdd;\n  }\n  else {\n    tangent = vClipStrokeEven;\n  }\n\n  float travel = dot(vClipStrokePosition, normalize(tangent)) / vClipStrokeWidth;\n  if (mod(travel, 4.0) > 2.0) {\n    discard;\n  }\n}\n",
+  "fragment.clip.ends": "varying vec2 vClipEnds;\n\nvoid clipEndsFragment() {\n  if (vClipEnds.x < 0.0 || vClipEnds.y < 0.0) discard;\n}\n",
+  "fragment.clip.proximity": "varying float vClipProximity;\n\nvoid clipProximityFragment() {\n  if (vClipProximity >= 0.5) discard;\n}",
+  "fragment.color": "void setFragmentColor(vec4 color) {\n  gl_FragColor = color;\n}",
+  "fragment.map.rgba": "vec4 fragmentRGBA(vec4 rgba, vec4 stpq) {\n  return rgba;\n}",
+  "fragment.solid": "void setFragmentColor(vec4 color) {\n  if (color.a < 1.0) discard;\n  gl_FragColor = color;\n}",
+  "fragment.transparent": "void setFragmentColor(vec4 color) {\n  if (color.a >= 1.0) discard;\n  gl_FragColor = color;\n}",
+  "grid.position": "uniform vec4 gridPosition;\nuniform vec4 gridStep;\nuniform vec4 gridAxis;\n\nvec4 sampleData(vec2 xy);\n\nvec4 getGridPosition(vec4 xyzw) {\n  vec4 onAxis  = gridAxis * sampleData(vec2(xyzw.y, 0.0)).x;\n  vec4 offAxis = gridStep * xyzw.x + gridPosition;\n  return onAxis + offAxis;\n}\n",
+  "grow.position": "uniform float growScale;\nuniform vec4  growMask;\nuniform vec4  growAnchor;\n\nvec4 getSample(vec4 xyzw);\n\nvec4 getGrowSample(vec4 xyzw) {\n  vec4 anchor = xyzw * growMask + growAnchor;\n\n  vec4 position = getSample(xyzw);\n  vec4 center = getSample(anchor);\n\n  return mix(center, position, growScale);\n}",
+  "join.position": "uniform float joinStride;\nuniform float joinStrideInv;\n\nfloat getIndex(vec4 xyzw);\nvec4 getRest(vec4 xyzw);\nvec4 injectIndices(float a, float b);\n\nvec4 getJoinXYZW(vec4 xyzw) {\n\n  float a = getIndex(xyzw);\n  float b = a * joinStrideInv;\n\n  float integer  = floor(b);\n  float fraction = b - integer;\n  \n  return injectIndices(fraction * joinStride, integer) + getRest(xyzw);\n}\n",
+  "label.alpha": "varying float vPixelSize;\n\nvec4 getLabelAlphaColor(vec4 color, vec4 sample) {\n  float mask = clamp(sample.r * 1000.0, 0.0, 1.0);\n  float alpha = (sample.r - .5) * vPixelSize + .5;\n  float a = mask * alpha * color.a;\n  if (a <= 0.0) discard;\n  return vec4(color.xyz, a);\n}\n",
+  "label.map": "vec2 mapUV(vec4 uvwo, vec4 stpq) {\n  return uvwo.xy;\n}\n",
+  "label.outline": "uniform float outlineExpand;\nuniform float outlineStep;\nuniform vec3  outlineColor;\n\nvarying float vPixelSize;\n\nconst float PIXEL_STEP = 255.0 / 16.0;\n\nvec4 getLabelOutlineColor(vec4 color, vec4 sample) {\n  float ps = vPixelSize * PIXEL_STEP;\n  float os = outlineStep;\n\n  float sdf = sample.r - .5 + outlineExpand;\n  vec2  sdfs = vec2(sdf, sdf + os);\n  vec2  alpha = clamp(sdfs * ps + .5, 0.0, 1.0);\n\n  if (alpha.y <= 0.0) {\n    discard;\n  }\n\n  vec3 blend = color.xyz;\n  if (alpha.y > alpha.x) {\n    blend = sqrt(mix(outlineColor * outlineColor, blend * blend, alpha.x));\n  }\n  \n  return vec4(blend, alpha.y * color.a);\n}\n",
+  "layer.position": "uniform vec4 layerScale;\nuniform vec4 layerBias;\n\nvec4 layerPosition(vec4 position, inout vec4 stpq) {\n  return layerScale * position + layerBias;\n}\n",
+  "lerp.depth": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpDepth(vec4 xyzw) {\n  float x = xyzw.z;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(xyzw.xy, i, xyzw.w);\n  vec4 xyzw2 = vec4(xyzw.xy, i + 1.0, xyzw.w);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
+  "lerp.height": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpHeight(vec4 xyzw) {\n  float x = xyzw.y;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(xyzw.x, i, xyzw.zw);\n  vec4 xyzw2 = vec4(xyzw.x, i + 1.0, xyzw.zw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
+  "lerp.items": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpItems(vec4 xyzw) {\n  float x = xyzw.w;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(xyzw.xyz, i);\n  vec4 xyzw2 = vec4(xyzw.xyz, i + 1.0);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
+  "lerp.width": "// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 lerpWidth(vec4 xyzw) {\n  float x = xyzw.x;\n  float i = floor(x);\n  float f = x - i;\n    \n  vec4 xyzw1 = vec4(i, xyzw.yzw);\n  vec4 xyzw2 = vec4(i + 1.0, xyzw.yzw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, f);\n}\n",
+  "line.position": "// Units and calibration\nuniform float worldUnit;\nuniform float lineWidth;\nuniform float lineDepth;\nuniform float focusDepth;\n\n// General data index\nuniform vec4 geometryClip;\nattribute vec4 position4;\n\n// (Start/mid/end -1/0/1, top/bottom -1,1) \nattribute vec2 line;\n\n// 0...1 for round or bevel joins\n#ifdef LINE_JOIN_DETAIL\nattribute float joint;\n#else\nconst float joint = 0.0;\n#endif\n\n// Knock out excessively long line segments (e.g. for asymtpotes)\n#ifdef LINE_PROXIMITY\nuniform float lineProximity;\nvarying float vClipProximity;\n#endif\n\n// Ghetto line stroking (local only, not global)\n#ifdef LINE_STROKE\nvarying float vClipStrokeWidth;\nvarying float vClipStrokeIndex;\nvarying vec3  vClipStrokeEven;\nvarying vec3  vClipStrokeOdd;\nvarying vec3  vClipStrokePosition;\n#endif\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\n// Clip line ends for arrows / decoration\n#ifdef LINE_CLIP\nuniform float clipRange;\nuniform vec2  clipStyle;\nuniform float clipSpace;\n\nattribute vec2 strip;\n\nvarying vec2 vClipEnds;\n\nvoid clipEnds(vec4 xyzw, vec3 center, vec3 pos) {\n\n  // Sample end of line strip\n  vec4 xyzwE = vec4(strip.y, xyzw.yzw);\n  vec3 end   = getPosition(xyzwE, 0.0);\n\n  // Sample start of line strip\n  vec4 xyzwS = vec4(strip.x, xyzw.yzw);\n  vec3 start = getPosition(xyzwS, 0.0);\n\n  // Measure length\n  vec3 diff = end - start;\n  float l = length(diff) * clipSpace;\n\n  // Arrow length (=2.5x radius)\n  float arrowSize = 1.25 * clipRange * lineWidth * worldUnit;\n\n  vClipEnds = vec2(1.0);\n\n  if (clipStyle.y > 0.0) {\n    // Depth blend end\n    float depth = focusDepth;\n    if (lineDepth < 1.0) {\n      float z = max(0.00001, -end.z);\n      depth = mix(z, focusDepth, lineDepth);\n    }\n    \n    // Absolute arrow length\n    float size = arrowSize * depth;\n\n    // Adjust clip range\n    // Approach linear scaling with cubic ease the smaller we get\n    float mini = clamp(1.0 - l / size * .333, 0.0, 1.0);\n    float scale = 1.0 - mini * mini * mini; \n    float invrange = 1.0 / (size * scale);\n  \n    // Clip end\n    diff = normalize(end - center);\n    float d = dot(end - pos, diff);\n    vClipEnds.x = d * invrange - 1.0;\n  }\n\n  if (clipStyle.x > 0.0) {\n    // Depth blend start\n    float depth = focusDepth;\n    if (lineDepth < 1.0) {\n      float z = max(0.00001, -start.z);\n      depth = mix(z, focusDepth, lineDepth);\n    }\n    \n    // Absolute arrow length\n    float size = arrowSize * depth;\n\n    // Adjust clip range\n    // Approach linear scaling with cubic ease the smaller we get\n    float mini = clamp(1.0 - l / size * .333, 0.0, 1.0);\n    float scale = 1.0 - mini * mini * mini; \n    float invrange = 1.0 / (size * scale);\n  \n    // Clip start \n    diff = normalize(center - start);\n    float d = dot(pos - start, diff);\n    vClipEnds.y = d * invrange - 1.0;\n  }\n\n\n}\n#endif\n\n// Adjust left/center/right to be inside near/far z range\nconst float epsilon = 1e-5;\nvoid fixCenter(inout vec3 left, inout vec3 center, inout vec3 right) {\n  if (center.z >= 0.0) {\n    if (left.z < 0.0) {\n      float d = (center.z + epsilon) / (center.z - left.z);\n      center = mix(center, left, d);\n    }\n    else if (right.z < 0.0) {\n      float d = (center.z + epsilon) / (center.z - right.z);\n      center = mix(center, right, d);\n    }\n  }\n\n  if (left.z >= 0.0) {\n    if (center.z < 0.0) {\n      float d = (left.z + epsilon) / (left.z - center.z);\n      left = mix(left, center, d);\n    }\n  }\n\n  if (right.z >= 0.0) {\n    if (center.z < 0.0) {\n      float d = (right.z + epsilon) / (right.z - center.z);\n      right = mix(right, center, d);\n    }\n  }\n}\n\n// Sample the source data in an edge-aware manner\nvoid getLineGeometry(vec4 xyzw, float edge, out vec3 left, out vec3 center, out vec3 right) {\n  vec4 delta = vec4(1.0, 0.0, 0.0, 0.0);\n\n  center =                 getPosition(xyzw, 1.0);\n  left   = (edge > -0.5) ? getPosition(xyzw - delta, 0.0) : center;\n  right  = (edge < 0.5)  ? getPosition(xyzw + delta, 0.0) : center;\n}\n\n// Calculate the position for a vertex along the line, including joins\nvec3 getLineJoin(float edge, bool odd, vec3 left, vec3 center, vec3 right, float width, float offset, float joint) {\n  vec2 join = vec2(1.0, 0.0);\n\n  fixCenter(left, center, right);\n\n  vec4 a = vec4(left.xy, right.xy);\n  vec4 b = a / vec4(left.zz, right.zz);\n\n  vec2 l = b.xy;\n  vec2 r = b.zw;\n  vec2 c = center.xy / center.z;\n\n  vec4 d = vec4(l, c) - vec4(c, r);\n  float l1 = dot(d.xy, d.xy);\n  float l2 = dot(d.zw, d.zw);\n\n  if (l1 + l2 > 0.0) {\n    \n    if (edge > 0.5 || l2 == 0.0) {\n      vec2 nl = normalize(d.xy);\n      vec2 tl = vec2(nl.y, -nl.x);\n\n#ifdef LINE_PROXIMITY\n      vClipProximity = 1.0;\n#endif\n\n#ifdef LINE_STROKE\n      vClipStrokeEven = vClipStrokeOdd = normalize(left - center);\n#endif\n      join = tl;\n    }\n    else if (edge < -0.5 || l1 == 0.0) {\n      vec2 nr = normalize(d.zw);\n      vec2 tr = vec2(nr.y, -nr.x);\n\n#ifdef LINE_PROXIMITY\n      vClipProximity = 1.0;\n#endif\n\n#ifdef LINE_STROKE\n      vClipStrokeEven = vClipStrokeOdd = normalize(center - right);\n#endif\n      join = tr;\n    }\n    else {\n      // Limit join stretch for tiny segments\n      float lmin2 = min(l1, l2) / (width * width);\n\n      // Hide line segment if ratio of leg lengths exceeds promixity threshold\n#ifdef LINE_PROXIMITY\n      float lr     = l1 / l2;\n      float rl     = l2 / l1;\n      float ratio  = max(lr, rl);\n      float thresh = lineProximity + 1.0;\n      vClipProximity = (ratio > thresh * thresh) ? 1.0 : 0.0;\n#endif\n\n      // Calculate normals/tangents\n      vec2 nl = normalize(d.xy);\n      vec2 nr = normalize(d.zw);\n\n      // Calculate tangents\n      vec2 tl = vec2(nl.y, -nl.x);\n      vec2 tr = vec2(nr.y, -nr.x);\n\n#ifdef LINE_PROXIMITY\n      // Mix tangents according to leg lengths\n      vec2 tc = normalize(mix(tl, tr, l1/(l1+l2)));\n#else\n      // Average tangent\n      vec2 tc = normalize(tl + tr);\n#endif\n    \n      // Miter join\n      float cosA   = dot(nl, tc);\n      float sinA   = max(0.1, abs(dot(tl, tc)));\n      float factor = cosA / sinA;\n      float scale  = sqrt(1.0 + min(lmin2, factor * factor));\n\n      // Stroke normals\n#ifdef LINE_STROKE\n      vec3 stroke1 = normalize(left - center);\n      vec3 stroke2 = normalize(center - right);\n\n      if (odd) {\n        vClipStrokeEven = stroke1;\n        vClipStrokeOdd  = stroke2;\n      }\n      else {\n        vClipStrokeEven = stroke2;\n        vClipStrokeOdd  = stroke1;\n      }\n#endif\n\n#ifdef LINE_JOIN_MITER\n      // Apply straight up miter\n      join = tc * scale;\n#endif\n\n#ifdef LINE_JOIN_ROUND\n      // Slerp bevel join into circular arc\n      float dotProduct = dot(nl, nr);\n      float angle = acos(dotProduct);\n      float sinT  = sin(angle);\n      join = (sin((1.0 - joint) * angle) * tl + sin(joint * angle) * tr) / sinT;\n#endif\n\n#ifdef LINE_JOIN_BEVEL\n      // Direct bevel join between two flat ends\n      float dotProduct = dot(nl, nr);\n      join = mix(tl, tr, joint);\n#endif\n\n#ifdef LINE_JOIN_DETAIL\n      // Check if on inside or outside of joint\n      float crossProduct = nl.x * nr.y - nl.y * nr.x;\n      if (offset * crossProduct < 0.0) {\n        // For near-180-degree bends, correct back to a miter to avoid discontinuities\n        float ratio = clamp(-dotProduct * 2.0 - 1.0, 0.0, 1.0);\n        // Otherwise collapse the inside vertices into one.\n        join = mix(tc * scale, join, ratio * ratio * ratio);\n      }\n#endif\n\n    }\n    return vec3(join, 0.0);\n  }\n  else {\n    return vec3(0.0);\n  }\n\n}\n\n// Calculate final line position\nvec3 getLinePosition() {\n  vec3 left, center, right, join;\n\n  // left/center/right\n  float edge = line.x;\n  // up/down\n  float offset = line.y;\n\n  // Clip data\n  vec4 p = min(geometryClip, position4);\n  edge += max(0.0, position4.x - geometryClip.x);\n\n  // Get position + adjacent neighbours\n  getLineGeometry(p, edge, left, center, right);\n\n#ifdef LINE_STROKE\n  // Set parameters for line stroke fragment shader\n  vClipStrokePosition = center;\n  vClipStrokeIndex = p.x;\n  bool odd = mod(p.x, 2.0) >= 1.0;\n#else\n  bool odd = true;\n#endif\n\n  // Divide line width up/down\n  float width = lineWidth * 0.5;\n\n  float depth = focusDepth;\n  if (lineDepth < 1.0) {\n    // Depth blending\n    float z = max(0.00001, -center.z);\n    depth = mix(z, focusDepth, lineDepth);\n  }\n  width *= depth;\n\n  // Convert to world units\n  width *= worldUnit;\n\n  // Calculate line join\n  join = getLineJoin(edge, odd, left, center, right, width, offset, joint);\n  vec3 pos = center + join * offset * width;\n\n#ifdef LINE_STROKE\n  vClipStrokeWidth = width;\n#endif\n\n#ifdef LINE_CLIP\n  clipEnds(p, center, pos);\n#endif\n\n  return pos;\n}\n",
+  "map.2d.data": "uniform vec2 dataResolution;\nuniform vec2 dataPointer;\n\nvec2 map2DData(vec2 xy) {\n  return (xy + dataPointer) * dataResolution;\n}\n",
+  "map.2d.data.wrap": "uniform vec2 dataResolution;\nuniform vec2 dataPointer;\n\nvec2 map2DData(vec2 xy) {\n  return fract((xy + dataPointer) * dataResolution);\n}\n",
+  "map.xyzw.2dv": "void mapXyzw2DV(vec4 xyzw, out vec2 xy, out float z) {\n  xy = xyzw.xy;\n  z  = xyzw.z;\n}\n\n",
+  "map.xyzw.align": "vec4 alignXYZW(vec4 xyzw) {\n  return floor(xyzw + .5);\n}\n\n",
+  "map.xyzw.texture": "uniform float textureItems;\nuniform float textureHeight;\n\nvec2 mapXyzwTexture(vec4 xyzw) {\n  \n  float x = xyzw.x;\n  float y = xyzw.y;\n  float z = xyzw.z;\n  float i = xyzw.w;\n  \n  return vec2(i, y) + vec2(x, z) * vec2(textureItems, textureHeight);\n}\n\n",
+  "mesh.fragment.color": "varying vec4 vColor;\n\nvec4 getColor() {\n  return vColor;\n}\n",
+  "mesh.fragment.map": "#ifdef POSITION_STPQ\nvarying vec4 vSTPQ;\n#endif\n#ifdef POSITION_U\nvarying float vU;\n#endif\n#ifdef POSITION_UV\nvarying vec2 vUV;\n#endif\n#ifdef POSITION_UVW\nvarying vec3 vUVW;\n#endif\n#ifdef POSITION_UVWO\nvarying vec4 vUVWO;\n#endif\n\nvec4 getSample(vec4 uvwo, vec4 stpq);\n\nvec4 getMapColor() {\n  #ifdef POSITION_STPQ\n  vec4 stpq = vSTPQ;\n  #else\n  vec4 stpq = vec4(0.0);\n  #endif\n\n  #ifdef POSITION_U\n  vec4 uvwo = vec4(vU, 0.0, 0.0, 0.0);\n  #endif\n  #ifdef POSITION_UV\n  vec4 uvwo = vec4(vUV, 0.0, 0.0);\n  #endif\n  #ifdef POSITION_UVW\n  vec4 uvwo = vec4(vUVW, 0.0);\n  #endif\n  #ifdef POSITION_UVWO\n  vec4 uvwo = vec4(vUVWO);\n  #endif\n\n  return getSample(uvwo, stpq);\n}\n",
+  "mesh.fragment.mask": "varying float vMask;\n\nfloat ease(float t) {\n  t = clamp(t, 0.0, 1.0);\n  return t * t * (3.0 - 2.0 * t);\n}\n\nvec4 maskColor() {\n  if (vMask <= 0.0) discard;\n  return vec4(vec3(1.0), ease(vMask));\n}\n",
+  "mesh.fragment.material": "#ifdef POSITION_STPQ\nvarying vec4 vSTPQ;\n#endif\n#ifdef POSITION_U\nvarying float vU;\n#endif\n#ifdef POSITION_UV\nvarying vec2 vUV;\n#endif\n#ifdef POSITION_UVW\nvarying vec3 vUVW;\n#endif\n#ifdef POSITION_UVWO\nvarying vec4 vUVWO;\n#endif\n\nvec4 getSample(vec4 rgba, vec4 stpq);\n\nvec4 getMaterialColor(vec4 rgba) {\n  vec4 stpq = vec4(0.0);\n\n  #ifdef POSITION_U\n  stpq.x = vU;\n  #endif\n  #ifdef POSITION_UV\n  stpq.xy = vUV;\n  #endif\n  #ifdef POSITION_UVW\n  stpq.xyz = vUVW;\n  #endif\n  #ifdef POSITION_UVWO\n  stpq = vUVWO;\n  #endif\n\n  #ifdef POSITION_STPQ\n  stpq = vSTPQ;\n  #endif\n\n  return getSample(rgba, stpq);\n}\n",
+  "mesh.fragment.shaded": "varying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvec3 offSpecular(vec3 color) {\n  vec3 c = 1.0 - color;\n  return 1.0 - c * c;\n}\n\nvec4 getShadedColor(vec4 rgba) {\n  \n  vec3 color = rgba.xyz;\n  vec3 color2 = offSpecular(rgba.xyz);\n\n  vec3 normal = normalize(vNormal);\n  vec3 light = normalize(vLight);\n  vec3 position = normalize(vPosition);\n  \n  float side    = gl_FrontFacing ? -1.0 : 1.0;\n  float cosine  = side * dot(normal, light);\n  float diffuse = mix(max(0.0, cosine), .5 + .5 * cosine, .1);\n  \n  vec3  halfLight = normalize(light + position);\n\tfloat cosineHalf = max(0.0, side * dot(normal, halfLight));\n\tfloat specular = pow(cosineHalf, 16.0);\n\t\n\treturn vec4(color * (diffuse * .9 + .05) + .25 * color2 * specular, rgba.a);\n}\n",
+  "mesh.fragment.texture": "",
+  "mesh.gamma.in": "vec4 getGammaInColor(vec4 rgba) {\n  return vec4(rgba.rgb * rgba.rgb, rgba.a);\n}\n",
+  "mesh.gamma.out": "vec4 getGammaOutColor(vec4 rgba) {\n  return vec4(sqrt(rgba.rgb), rgba.a);\n}\n",
+  "mesh.map.uvwo": "vec4 mapUVWO(vec4 uvwo, vec4 stpq) {\n  return uvwo;\n}\n",
+  "mesh.position": "uniform vec4 geometryClip;\nattribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getMeshPosition() {\n  vec4 p = min(geometryClip, position4);\n  return getPosition(p, 1.0);\n}\n",
+  "mesh.vertex.color": "attribute vec4 position4;\nuniform vec4 geometryClip;\nvarying vec4 vColor;\n\n// External\nvec4 getSample(vec4 xyzw);\n\nvoid vertexColor() {\n  vec4 p = min(geometryClip, position4);\n  vColor = getSample(p);\n}\n",
+  "mesh.vertex.mask": "attribute vec4 position4;\nuniform vec4 geometryResolution;\nuniform vec4 geometryClip;\nvarying float vMask;\n\n// External\nfloat getSample(vec4 xyzw);\n\nvoid maskLevel() {\n  vec4 p = min(geometryClip, position4);\n  vMask = getSample(p * geometryResolution);\n}\n",
+  "mesh.vertex.position": "uniform vec4 geometryResolution;\n\n#ifdef POSITION_STPQ\nvarying vec4 vSTPQ;\n#endif\n#ifdef POSITION_U\nvarying float vU;\n#endif\n#ifdef POSITION_UV\nvarying vec2 vUV;\n#endif\n#ifdef POSITION_UVW\nvarying vec3 vUVW;\n#endif\n#ifdef POSITION_UVWO\nvarying vec4 vUVWO;\n#endif\n\n// External\nvec3 getPosition(vec4 xyzw, in vec4 stpqIn, out vec4 stpqOut);\n\nvec3 getMeshPosition(vec4 xyzw, float canonical) {\n  vec4 stpqOut, stpqIn = xyzw * geometryResolution;\n  vec3 xyz = getPosition(xyzw, stpqIn, stpqOut);\n\n  #ifdef POSITION_MAP\n  if (canonical > 0.5) {\n    #ifdef POSITION_STPQ\n    vSTPQ = stpqOut;\n    #endif\n    #ifdef POSITION_U\n    vU = stpqOut.x;\n    #endif\n    #ifdef POSITION_UV\n    vUV = stpqOut.xy;\n    #endif\n    #ifdef POSITION_UVW\n    vUVW = stpqOut.xyz;\n    #endif\n    #ifdef POSITION_UVWO\n    vUVWO = stpqOut;\n    #endif\n  }\n  #endif\n  return xyz;\n}\n",
+  "move.position": "uniform float transitionEnter;\nuniform float transitionExit;\nuniform vec4  transitionScale;\nuniform vec4  transitionBias;\nuniform float transitionSkew;\nuniform float transitionActive;\n\nuniform vec4  moveFrom;\nuniform vec4  moveTo;\n\nfloat ease(float t) {\n  t = clamp(t, 0.0, 1.0);\n  return 1.0 - (2.0 - t) * t;\n}\n\nvec4 getTransitionPosition(vec4 xyzw, inout vec4 stpq) {\n  if (transitionActive < 0.5) return xyzw;\n\n  float enter   = transitionEnter;\n  float exit    = transitionExit;\n  float skew    = transitionSkew;\n  vec4  scale   = transitionScale;\n  vec4  bias    = transitionBias;\n\n  float factor  = 1.0 + skew;\n  float offset  = dot(vec4(1.0), stpq * scale + bias);\n\n  float a1 = ease(enter * factor - offset);\n  float a2 = ease(exit  * factor + offset - skew);\n\n  return xyzw + a1 * moveFrom + a2 * moveTo;\n}",
+  "object.mask.default": "vec4 getMask(vec4 xyzw) {\n  return vec4(1.0);\n}",
+  "point.alpha.circle": "varying float vPixelSize;\n\nfloat getDiscAlpha(float mask) {\n  // Approximation: 1 - x*x is approximately linear around x = 1 with slope 2\n  return vPixelSize * (1.0 - mask);\n  //  return vPixelSize * 2.0 * (1.0 - sqrt(mask));\n}\n",
+  "point.alpha.circle.hollow": "varying float vPixelSize;\n\nfloat getDiscHollowAlpha(float mask) {\n  return vPixelSize * (0.5 - 2.0 * abs(sqrt(mask) - .75));\n}\n",
+  "point.alpha.generic": "varying float vPixelSize;\n\nfloat getGenericAlpha(float mask) {\n  return vPixelSize * 2.0 * (1.0 - mask);\n}\n",
+  "point.alpha.generic.hollow": "varying float vPixelSize;\n\nfloat getGenericHollowAlpha(float mask) {\n  return vPixelSize * (0.5 - 2.0 * abs(mask - .75));\n}\n",
+  "point.edge": "varying vec2 vSprite;\n\nfloat getSpriteMask(vec2 xy);\nfloat getSpriteAlpha(float mask);\n\nvoid setFragmentColorFill(vec4 color) {\n  float mask = getSpriteMask(vSprite);\n  if (mask > 1.0) {\n    discard;\n  }\n  float alpha = getSpriteAlpha(mask);\n  if (alpha >= 1.0) {\n    discard;\n  }\n  gl_FragColor = vec4(color.rgb, alpha * color.a);\n}\n",
+  "point.fill": "varying vec2 vSprite;\n\nfloat getSpriteMask(vec2 xy);\nfloat getSpriteAlpha(float mask);\n\nvoid setFragmentColorFill(vec4 color) {\n  float mask = getSpriteMask(vSprite);\n  if (mask > 1.0) {\n    discard;\n  }\n  float alpha = getSpriteAlpha(mask);\n  if (alpha < 1.0) {\n    discard;\n  }\n  gl_FragColor = color;\n}\n\n",
+  "point.mask.circle": "varying float vPixelSize;\n\nfloat getCircleMask(vec2 uv) {\n  return dot(uv, uv);\n}\n",
+  "point.mask.diamond": "varying float vPixelSize;\n\nfloat getDiamondMask(vec2 uv) {\n  vec2 a = abs(uv);\n  return a.x + a.y;\n}\n",
+  "point.mask.down": "varying float vPixelSize;\n\nfloat getTriangleDownMask(vec2 uv) {\n  uv.y += .25;\n  return max(uv.y, abs(uv.x) * .866 - uv.y * .5 + .6);\n}\n",
+  "point.mask.left": "varying float vPixelSize;\n\nfloat getTriangleLeftMask(vec2 uv) {\n  uv.x += .25;\n  return max(uv.x, abs(uv.y) * .866 - uv.x * .5 + .6);\n}\n",
+  "point.mask.right": "varying float vPixelSize;\n\nfloat getTriangleRightMask(vec2 uv) {\n  uv.x -= .25;\n  return max(-uv.x, abs(uv.y) * .866 + uv.x * .5 + .6);\n}\n",
+  "point.mask.square": "varying float vPixelSize;\n\nfloat getSquareMask(vec2 uv) {\n  vec2 a = abs(uv);\n  return max(a.x, a.y);\n}\n",
+  "point.mask.up": "varying float vPixelSize;\n\nfloat getTriangleUpMask(vec2 uv) {\n  uv.y -= .25;\n  return max(-uv.y, abs(uv.x) * .866 + uv.y * .5 + .6);\n}\n",
+  "point.position": "uniform float pointDepth;\n\nuniform float pixelUnit;\nuniform float renderScale;\nuniform float renderScaleInv;\nuniform float focusDepth;\n\nuniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec2 sprite;\n\nvarying vec2 vSprite;\nvarying float vPixelSize;\n\nconst float pointScale = POINT_SHAPE_SCALE;\n\n// External\nfloat getPointSize(vec4 xyzw);\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getPointPosition() {\n  vec4 p = min(geometryClip, position4);\n  vec3 center = getPosition(p, 1.0);\n\n  // Depth blending\n  // TODO: orthographic camera\n  // Workaround: set depth = 0\n  float z = -center.z;\n  float depth = mix(z, focusDepth, pointDepth);\n  \n  // Match device/unit mapping \n  // Sprite goes from -1..1, width = 2.\n  float pointSize = getPointSize(p);\n  float size = pointScale * pointSize * pixelUnit * .5;\n  float depthSize = depth * size;\n  \n  // Pad sprite by half a pixel to make the anti-aliasing straddle the pixel edge\n  // Note: pixelsize measures radius\n  float pixelSize = .5 * (pointDepth > 0.0 ? depthSize / z : size);\n  float paddedSize = pixelSize + 0.5;\n  float padFactor = paddedSize / pixelSize;\n\n  vPixelSize = paddedSize;\n  vSprite    = sprite;\n\n  return center + vec3(sprite * depthSize * renderScaleInv * padFactor, 0.0);\n}\n",
+  "point.size.uniform": "uniform float pointSize;\n\nfloat getPointSize(vec4 xyzw) {\n  return pointSize;\n}",
+  "point.size.varying": "uniform float pointSize;\n\nvec4 getSample(vec4 xyzw);\n\nfloat getPointSize(vec4 xyzw) {\n  return pointSize * getSample(xyzw).x;\n}",
+  "polar.position": "uniform float polarBend;\nuniform float polarFocus;\nuniform float polarAspect;\nuniform float polarHelix;\n\nuniform mat4 viewMatrix;\n\nvec4 getPolarPosition(vec4 position, inout vec4 stpq) {\n  if (polarBend > 0.0) {\n\n    if (polarBend < 0.001) {\n      // Factor out large addition/subtraction of polarFocus\n      // to avoid numerical error\n      // sin(x) ~ x\n      // cos(x) ~ 1 - x * x / 2\n      vec2 pb = position.xy * polarBend;\n      float ppbbx = pb.x * pb.x;\n      return viewMatrix * vec4(\n        position.x * (1.0 - polarBend + (pb.y * polarAspect)),\n        position.y * (1.0 - .5 * ppbbx) - (.5 * ppbbx) * polarFocus / polarAspect,\n        position.z + position.x * polarHelix * polarBend,\n        1.0\n      );\n    }\n    else {\n      vec2 xy = position.xy * vec2(polarBend, polarAspect);\n      float radius = polarFocus + xy.y;\n      return viewMatrix * vec4(\n        sin(xy.x) * radius,\n        (cos(xy.x) * radius - polarFocus) / polarAspect,\n        position.z + position.x * polarHelix * polarBend,\n        1.0\n      );\n    }\n  }\n  else {\n    return viewMatrix * vec4(position.xyz, 1.0);\n  }\n}",
+  "project.position": "uniform float styleZBias;\nuniform float styleZIndex;\n\nvoid setPosition(vec3 position) {\n  vec4 pos = projectionMatrix * vec4(position, 1.0);\n\n  // Apply relative Z bias\n  float bias  = (1.0 - styleZBias / 32768.0);\n  pos.z *= bias;\n  \n  // Apply large scale Z index changes\n  if (styleZIndex > 0.0) {\n    float z = pos.z / pos.w;\n    pos.z = ((z + 1.0) / (styleZIndex + 1.0) - 1.0) * pos.w;\n  }\n  \n  gl_Position = pos;\n}",
+  "project.readback": "// This is three.js' global uniform, missing from fragment shaders.\nuniform mat4 projectionMatrix;\n\nvec4 readbackPosition(vec3 position, vec4 stpq) {\n  vec4 pos = projectionMatrix * vec4(position, 1.0);\n  vec3 final = pos.xyz / pos.w;\n  if (final.z < -1.0) {\n    return vec4(0.0, 0.0, 0.0, -1.0);\n  }\n  else {\n    return vec4(final, -position.z);\n  }\n}\n",
+  "raw.position.scale": "uniform vec4 geometryScale;\nattribute vec4 position4;\n\nvec4 getRawPositionScale() {\n  return geometryScale * position4;\n}\n",
+  "repeat.position": "uniform vec4 repeatModulus;\n\nvec4 getRepeatXYZW(vec4 xyzw) {\n  return mod(xyzw + .5, repeatModulus) - .5;\n}\n",
+  "resample.padding": "uniform vec4 resampleBias;\n\nvec4 resamplePadding(vec4 xyzw) {\n  return xyzw + resampleBias;\n}",
+  "resample.relative": "uniform vec4 resampleFactor;\n\nvec4 resampleRelative(vec4 xyzw) {\n  return xyzw * resampleFactor;\n}",
+  "reveal.mask": "uniform float transitionEnter;\nuniform float transitionExit;\nuniform vec4  transitionScale;\nuniform vec4  transitionBias;\nuniform float transitionSkew;\nuniform float transitionActive;\n\nfloat getTransitionSDFMask(vec4 stpq) {\n  if (transitionActive < 0.5) return 1.0;\n\n  float enter   = transitionEnter;\n  float exit    = transitionExit;\n  float skew    = transitionSkew;\n  vec4  scale   = transitionScale;\n  vec4  bias    = transitionBias;\n\n  float factor  = 1.0 + skew;\n  float offset  = dot(vec4(1.0), stpq * scale + bias);\n\n  vec2 d = vec2(enter, exit) * factor + vec2(-offset, offset - skew);\n  if (exit  == 1.0) return d.x;\n  if (enter == 1.0) return d.y;\n  return min(d.x, d.y);\n}",
+  "root.position": "vec3 getRootPosition(vec4 position, in vec4 stpqIn, out vec4 stpqOut) {\n  stpqOut = stpqIn; // avoid inout confusion\n  return position.xyz;\n}",
+  "sample.2d": "uniform sampler2D dataTexture;\n\nvec4 sample2D(vec2 uv) {\n  return texture2D(dataTexture, uv);\n}\n",
+  "scale.position": "uniform vec4 scaleAxis;\nuniform vec4 scaleOffset;\n\nvec4 sampleData(float x);\n\nvec4 getScalePosition(vec4 xyzw) {\n  return scaleAxis * sampleData(xyzw.x).x + scaleOffset;\n}\n",
+  "screen.map.stpq": "uniform vec4 remapSTPQScale;\n\nvec4 screenMapSTPQ(vec4 xyzw, out vec4 stpq) {\n  stpq = xyzw * remapSTPQScale;\n  return xyzw;\n}\n",
+  "screen.map.xy": "uniform vec2 remapUVScale;\n\nvec4 screenMapXY(vec4 uvwo, vec4 stpq) {\n  return vec4(floor(remapUVScale * uvwo.xy), 0.0, 0.0);\n}\n",
+  "screen.map.xyzw": "uniform vec2 remapUVScale;\nuniform vec2 remapModulus;\nuniform vec2 remapModulusInv;\n\nvec4 screenMapXYZW(vec4 uvwo, vec4 stpq) {\n  vec2 st = floor(remapUVScale * uvwo.xy);\n  vec2 xy = st * remapModulusInv;\n  vec2 ixy = floor(xy);\n  vec2 fxy = xy - ixy;\n  vec2 zw = fxy * remapModulus;\n  return vec4(ixy.x, zw.y, ixy.y, zw.x);\n}\n",
+  "screen.pass.uv": "vec2 screenPassUV(vec4 uvwo, vec4 stpq) {\n  return uvwo.xy;\n}\n",
+  "screen.position": "void setScreenPosition(vec4 position) {\n  gl_Position = vec4(position.xy * 2.0 - 1.0, 0.5, 1.0);\n}\n",
+  "slice.position": "uniform vec4 sliceOffset;\n\nvec4 getSliceOffset(vec4 xyzw) {\n  return xyzw + sliceOffset;\n}\n",
+  "spherical.position": "uniform float sphericalBend;\nuniform float sphericalFocus;\nuniform float sphericalAspectX;\nuniform float sphericalAspectY;\nuniform float sphericalScaleY;\n\nuniform mat4 viewMatrix;\n\nvec4 getSphericalPosition(vec4 position, inout vec4 stpq) {\n  if (sphericalBend > 0.0001) {\n\n    vec3 xyz = position.xyz * vec3(sphericalBend, sphericalBend / sphericalAspectY * sphericalScaleY, sphericalAspectX);\n    float radius = sphericalFocus + xyz.z;\n    float cosine = cos(xyz.y) * radius;\n\n    return viewMatrix * vec4(\n      sin(xyz.x) * cosine,\n      sin(xyz.y) * radius * sphericalAspectY,\n      (cos(xyz.x) * cosine - sphericalFocus) / sphericalAspectX,\n      1.0\n    );\n  }\n  else {\n    return viewMatrix * vec4(position.xyz, 1.0);\n  }\n}",
+  "split.position": "uniform float splitStride;\n\nvec2 getIndices(vec4 xyzw);\nvec4 getRest(vec4 xyzw);\nvec4 injectIndex(float v);\n\nvec4 getSplitXYZW(vec4 xyzw) {\n  vec2 uv = getIndices(xyzw);\n  float offset = uv.x + uv.y * splitStride;\n  return injectIndex(offset) + getRest(xyzw);\n}\n",
+  "spread.position": "uniform vec4 spreadOffset;\nuniform mat4 spreadMatrix;\n\n// External\nvec4 getSample(vec4 xyzw);\n\nvec4 getSpreadSample(vec4 xyzw) {\n  vec4 sample = getSample(xyzw);\n  return sample + spreadMatrix * (spreadOffset + xyzw);\n}\n",
+  "sprite.fragment": "varying vec2 vSprite;\n\nvec4 getSample(vec2 xy);\n\nvec4 getSpriteColor() {\n  return getSample(vSprite);\n}",
+  "sprite.position": "uniform vec2 spriteOffset;\nuniform float spriteScale;\nuniform float spriteDepth;\nuniform float spriteSnap;\n\nuniform vec2 renderOdd;\nuniform float renderScale;\nuniform float renderScaleInv;\nuniform float pixelUnit;\nuniform float focusDepth;\n\nuniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec2 sprite;\n\nvarying float vPixelSize;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\nvec4 getSprite(vec4 xyzw);\n\nvec3 getSpritePosition() {\n  // Clip points\n  vec4 p = min(geometryClip, position4);\n  float diff = length(position4 - p);\n  if (diff > 0.0) {\n    return vec3(0.0, 0.0, 1000.0);\n  }\n\n  // Make sprites\n  vec3 center = getPosition(p, 1.0);\n  vec4 atlas = getSprite(p);\n\n  // Sprite goes from -1..1, width = 2.\n  // -1..1 -> -0.5..0.5\n  vec2 halfSprite = sprite * .5;\n  vec2 halfFlipSprite = vec2(halfSprite.x, -halfSprite.y);\n\n#ifdef POSITION_UV\n  // Assign UVs\n  vUV = atlas.xy + atlas.zw * (halfFlipSprite + .5);\n#endif\n\n  // Depth blending\n  // TODO: orthographic camera\n  // Workaround: set depth = 0\n  float depth = focusDepth, z;\n  z = -center.z;\n  if (spriteDepth < 1.0) {\n    depth = mix(z, focusDepth, spriteDepth);\n  }\n  \n  // Match device/unit mapping \n  float size = pixelUnit * spriteScale;\n  float depthSize = depth * size;\n\n  // Calculate pixelSize for anti-aliasing\n  float pixelSize = (spriteDepth > 0.0 ? depthSize / z : size);\n  vPixelSize = pixelSize;\n\n  // Position sprite\n  vec2 atlasOdd = fract(atlas.zw / 2.0);\n  vec2 offset = (spriteOffset + halfSprite * atlas.zw) * depthSize;\n  if (spriteSnap > 0.5) {\n    // Snap to pixel (w/ epsilon shift to avoid jitter)\n    return vec3(((floor(center.xy / center.z * renderScale + 0.001) + renderOdd + atlasOdd) * center.z + offset) * renderScaleInv, center.z);\n  }\n  else {\n    // Place directly\n    return center + vec3(offset * renderScaleInv, 0.0);\n  }\n\n}\n",
+  "stereographic.position": "uniform float stereoBend;\n\nuniform mat4 viewMatrix;\n\nvec4 getStereoPosition(vec4 position, inout vec4 stpq) {\n  if (stereoBend > 0.0001) {\n\n    vec3 pos = position.xyz;\n    float r = length(pos);\n    float z = r + pos.z;\n    vec3 project = vec3(pos.xy / z, r);\n    \n    vec3 lerped = mix(pos, project, stereoBend);\n\n    return viewMatrix * vec4(lerped, 1.0);\n  }\n  else {\n    return viewMatrix * vec4(position.xyz, 1.0);\n  }\n}",
+  "stereographic4.position": "uniform float stereoBend;\nuniform vec4 basisScale;\nuniform vec4 basisOffset;\nuniform mat4 viewMatrix;\nuniform vec2 view4D;\n\nvec4 getStereographic4Position(vec4 position, inout vec4 stpq) {\n  \n  vec4 transformed;\n  if (stereoBend > 0.0001) {\n\n    float r = length(position);\n    float w = r + position.w;\n    vec4 project = vec4(position.xyz / w, r);\n    \n    transformed = mix(position, project, stereoBend);\n  }\n  else {\n    transformed = position;\n  }\n\n  vec4 pos4 = transformed * basisScale - basisOffset;\n  vec3 xyz = (viewMatrix * vec4(pos4.xyz, 1.0)).xyz;\n  return vec4(xyz, pos4.w * view4D.y + view4D.x);\n}\n",
+  "stpq.sample.2d": "varying vec2 vST;\n\nvec4 getSample(vec2 st);\n\nvec4 getSTSample() {\n  return getSample(vST);\n}\n",
+  "stpq.xyzw.2d": "varying vec2 vUV;\n\nvoid setRawUV(vec4 xyzw) {\n  vUV = xyzw.xy;\n}\n",
+  "strip.position.normal": "uniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec3 strip;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvarying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvoid getStripGeometry(vec4 xyzw, vec3 strip, out vec3 pos, out vec3 normal) {\n  vec3 a, b, c;\n\n  a   = getPosition(xyzw, 1.0);\n  b   = getPosition(vec4(xyzw.xyz, strip.x), 0.0);\n  c   = getPosition(vec4(xyzw.xyz, strip.y), 0.0);\n\n  normal = normalize(cross(c - a, b - a)) * strip.z;\n  \n  pos = a;\n}\n\nvec3 getStripPositionNormal() {\n  vec3 center, normal;\n\n  vec4 p = min(geometryClip, position4);\n\n  getStripGeometry(p, strip, center, normal);\n  vNormal   = normal;\n  vLight    = normalize((viewMatrix * vec4(1.0, 2.0, 2.0, 0.0)).xyz);\n  vPosition = -center;\n\n  return center;\n}\n",
+  "style.color": "uniform vec3 styleColor;\nuniform float styleOpacity;\n\nvec4 getStyleColor() {\n  return vec4(styleColor, styleOpacity);\n}\n",
+  "subdivide.depth": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideDepth(vec4 xyzw) {\n  float x = xyzw.z;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(xyzw.xy, i + g, xyzw.w));\n}\n",
+  "subdivide.depth.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideDepthLerp(vec4 xyzw) {\n  float x = xyzw.z;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(xyzw.xy, i, xyzw.w);\n  vec4 xyzw2 = vec4(xyzw.xy, i + 1.0, xyzw.w);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
+  "subdivide.height": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideHeight(vec4 xyzw) {\n  float x = xyzw.y;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(xyzw.x, i + g, xyzw.zw));\n}\n",
+  "subdivide.height.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideHeightLerp(vec4 xyzw) {\n  float x = xyzw.y;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(xyzw.x, i, xyzw.zw);\n  vec4 xyzw2 = vec4(xyzw.x, i + 1.0, xyzw.zw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
+  "subdivide.items": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideItems(vec4 xyzw) {\n  float x = xyzw.w;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(xyzw.xyz, i + g));\n}\n",
+  "subdivide.items.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideItemsLerp(vec4 xyzw) {\n  float x = xyzw.w;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(xyzw.xyz, i);\n  vec4 xyzw2 = vec4(xyzw.xyz, i + 1.0);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
+  "subdivide.width": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideWidth(vec4 xyzw) {\n  float x = xyzw.x;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  return sampleData(vec4(i + g, xyzw.yzw));\n}\n",
+  "subdivide.width.lerp": "uniform float subdivideBevel;\n\n// External\nvec4 sampleData(vec4 xyzw);\n\nvec4 subdivideWidthLerp(vec4 xyzw) {\n  float x = xyzw.x;\n  float i = floor(x);\n  float f = x - i;\n\n  float minf = subdivideBevel * min(f, 1.0 - f);\n  float g = (f > 0.5) ? 1.0 - minf : (f < 0.5) ? minf : 0.5;\n\n  vec4 xyzw1 = vec4(i, xyzw.yzw);\n  vec4 xyzw2 = vec4(i + 1.0, xyzw.yzw);\n  \n  vec4 a = sampleData(xyzw1);\n  vec4 b = sampleData(xyzw2);\n\n  return mix(a, b, g);\n}\n",
+  "surface.mask.hollow": "attribute vec4 position4;\n\nfloat getSurfaceHollowMask(vec4 xyzw) {\n  vec4 df = abs(fract(position4) - .5);\n  vec2 df2 = min(df.xy, df.zw);\n  float df3 = min(df2.x, df2.y);\n  return df3;\n}",
+  "surface.position": "uniform vec4 geometryClip;\nuniform vec4 geometryResolution;\nuniform vec4 mapSize;\n\nattribute vec4 position4;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvec3 getSurfacePosition() {\n  vec4 p = min(geometryClip, position4);\n  vec3 xyz = getPosition(p, 1.0);\n\n  // Overwrite UVs\n#ifdef POSITION_UV\n#ifdef POSITION_UV_INT\n  vUV = -.5 + (position4.xy * geometryResolution.xy) * mapSize.xy;\n#else\n  vUV = position4.xy * geometryResolution.xy;\n#endif\n#endif\n\n  return xyz;\n}\n",
+  "surface.position.normal": "uniform vec4 mapSize;\nuniform vec4 geometryResolution;\nuniform vec4 geometryClip;\nattribute vec4 position4;\nattribute vec2 surface;\n\n// External\nvec3 getPosition(vec4 xyzw, float canonical);\n\nvoid getSurfaceGeometry(vec4 xyzw, float edgeX, float edgeY, out vec3 left, out vec3 center, out vec3 right, out vec3 up, out vec3 down) {\n  vec4 deltaX = vec4(1.0, 0.0, 0.0, 0.0);\n  vec4 deltaY = vec4(0.0, 1.0, 0.0, 0.0);\n\n  /*\n  // high quality, 5 tap\n  center =                  getPosition(xyzw, 1.0);\n  left   = (edgeX > -0.5) ? getPosition(xyzw - deltaX, 0.0) : center;\n  right  = (edgeX < 0.5)  ? getPosition(xyzw + deltaX, 0.0) : center;\n  down   = (edgeY > -0.5) ? getPosition(xyzw - deltaY, 0.0) : center;\n  up     = (edgeY < 0.5)  ? getPosition(xyzw + deltaY, 0.0) : center;\n  */\n  \n  // low quality, 3 tap\n  center =                  getPosition(xyzw, 1.0);\n  left   =                  center;\n  down   =                  center;\n  right  = (edgeX < 0.5)  ? getPosition(xyzw + deltaX, 0.0) : (2.0 * center - getPosition(xyzw - deltaX, 0.0));\n  up     = (edgeY < 0.5)  ? getPosition(xyzw + deltaY, 0.0) : (2.0 * center - getPosition(xyzw - deltaY, 0.0));\n}\n\nvec3 getSurfaceNormal(vec3 left, vec3 center, vec3 right, vec3 up, vec3 down) {\n  vec3 dx = right - left;\n  vec3 dy = up    - down;\n  vec3 n = cross(dy, dx);\n  if (length(n) > 0.0) {\n    return normalize(n);\n  }\n  return vec3(0.0, 1.0, 0.0);\n}\n\nvarying vec3 vNormal;\nvarying vec3 vLight;\nvarying vec3 vPosition;\n\nvec3 getSurfacePositionNormal() {\n  vec3 left, center, right, up, down;\n\n  vec4 p = min(geometryClip, position4);\n\n  getSurfaceGeometry(p, surface.x, surface.y, left, center, right, up, down);\n  vNormal   = getSurfaceNormal(left, center, right, up, down);\n  vLight    = normalize((viewMatrix * vec4(1.0, 2.0, 2.0, 0.0)).xyz); // hardcoded directional light\n  vPosition = -center;\n\n#ifdef POSITION_UV\n#ifdef POSITION_UV_INT\n  vUV = -.5 + (position4.xy * geometryResolution.xy) * mapSize.xy;\n#else\n  vUV = position4.xy * geometryResolution.xy;\n#endif\n#endif\n  \n  return center;\n}\n",
+  "ticks.position": "uniform float worldUnit;\nuniform float focusDepth;\nuniform float tickSize;\nuniform float tickEpsilon;\nuniform vec3  tickNormal;\nuniform vec2  tickStrip;\n\nvec4 getSample(vec4 xyzw);\n\nvec3 transformPosition(vec4 position, in vec4 stpqIn, out vec4 stpqOut);\n\nvec3 getTickPosition(vec4 xyzw, in vec4 stpqIn, out vec4 stpqOut) {\n  float epsilon = tickEpsilon;\n\n  // determine tick direction\n  float leftX  = max(tickStrip.x, xyzw.y - 1.0);\n  float rightX = min(tickStrip.y, xyzw.y + 1.0);\n  \n  vec4 left    = getSample(vec4(leftX,  xyzw.zw, 0.0));\n  vec4 right   = getSample(vec4(rightX, xyzw.zw, 0.0));\n  vec4 diff    = right - left;\n\n  vec3 normal  = cross(normalize(diff.xyz + vec3(diff.w)), tickNormal);\n  float bias   = max(0.0, 1.0 - length(normal) * 2.0);\n       normal  = mix(normal, tickNormal.yzx, bias * bias);\n  \n  // transform (point) and (point + delta)\n  vec4 center  = getSample(vec4(xyzw.yzw, 0.0));\n  vec4 delta   = vec4(normal, 0.0) * epsilon;\n\n  vec4 a = center;\n  vec4 b = center + delta;\n\n  vec4 _;\n  vec3 c = transformPosition(a, stpqIn, stpqOut);\n  vec3 d = transformPosition(b, stpqIn, _);\n  \n  // sample on either side to create line\n  float line = xyzw.x - .5;\n  vec3  mid  = c;\n  vec3  side = normalize(d - c);\n\n  return mid + side * line * tickSize * worldUnit * focusDepth;\n}\n",
+  "transform3.position": "uniform mat4 transformMatrix;\n\nvec4 transformPosition(vec4 position, inout vec4 stpq) {\n  return transformMatrix * vec4(position.xyz, 1.0);\n}\n",
+  "transform4.position": "uniform mat4 transformMatrix;\nuniform vec4 transformOffset;\n\nvec4 transformPosition(vec4 position, inout vec4 stpq) {\n  return transformMatrix * position + transformOffset;\n}\n",
+  "view.position": "// Implicit three.js uniform\n// uniform mat4 viewMatrix;\n\nvec4 getViewPosition(vec4 position, inout vec4 stpq) {\n  return (viewMatrix * vec4(position.xyz, 1.0));\n}\n" };
 
 },{}],2:[function(require,module,exports){
-var indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+"use strict";
 
-exports.setOrigin = function(vec, dimensions, origin) {
+var indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
+
+exports.setOrigin = function (vec, dimensions, origin) {
   var w, x, y, z;
   if (+dimensions === dimensions) {
     dimensions = [dimensions];
@@ -46810,16 +46818,16 @@ exports.setOrigin = function(vec, dimensions, origin) {
   return vec.set(x, y, z, w);
 };
 
-exports.addOrigin = (function() {
+exports.addOrigin = function () {
   var v;
-  v = new THREE.Vector4;
-  return function(vec, dimension, origin) {
+  v = new THREE.Vector4();
+  return function (vec, dimension, origin) {
     exports.setOrigin(v, dimension, origin);
     return vec.add(v);
   };
-})();
+}();
 
-exports.setDimension = function(vec, dimension) {
+exports.setDimension = function (vec, dimension) {
   var w, x, y, z;
   x = dimension === 1 ? 1 : 0;
   y = dimension === 2 ? 1 : 0;
@@ -46828,7 +46836,7 @@ exports.setDimension = function(vec, dimension) {
   return vec.set(x, y, z, w);
 };
 
-exports.setDimensionNormal = function(vec, dimension) {
+exports.setDimensionNormal = function (vec, dimension) {
   var w, x, y, z;
   x = dimension === 1 ? 1 : 0;
   y = dimension === 2 ? 1 : 0;
@@ -46837,10 +46845,10 @@ exports.setDimensionNormal = function(vec, dimension) {
   return vec.set(y, z + x, w, 0);
 };
 
-exports.recenterAxis = (function() {
+exports.recenterAxis = function () {
   var axis;
   axis = [0, 0];
-  return function(x, dx, bend, f) {
+  return function (x, dx, bend, f) {
     var abs, fabs, max, min, x1, x2;
     if (f == null) {
       f = 0;
@@ -46859,23 +46867,25 @@ exports.recenterAxis = (function() {
     axis[1] = dx;
     return axis;
   };
-})();
+}();
 
 },{}],3:[function(require,module,exports){
+'use strict';
+
 var getSizes;
 
-exports.getSizes = getSizes = function(data) {
+exports.getSizes = getSizes = function getSizes(data) {
   var array, sizes;
   sizes = [];
   array = data;
-  while (typeof array !== 'string' && ((array != null ? array.length : void 0) != null)) {
+  while (typeof array !== 'string' && (array != null ? array.length : void 0) != null) {
     sizes.push(array.length);
     array = array[0];
   }
   return sizes;
 };
 
-exports.getDimensions = function(data, spec) {
+exports.getDimensions = function (data, spec) {
   var channels, depth, dims, height, items, levels, n, nesting, ref, ref1, ref2, ref3, ref4, sizes, width;
   if (spec == null) {
     spec = {};
@@ -46940,37 +46950,37 @@ exports.getDimensions = function(data, spec) {
   return dims;
 };
 
-exports.repeatCall = function(call, times) {
+exports.repeatCall = function (call, times) {
   switch (times) {
     case 0:
-      return function() {
+      return function () {
         return true;
       };
     case 1:
-      return function() {
+      return function () {
         return call();
       };
     case 2:
-      return function() {
+      return function () {
         call();
         return call();
       };
     case 3:
-      return function() {
+      return function () {
         call();
         call();
         call();
         return call();
       };
     case 4:
-      return function() {
+      return function () {
         call();
         call();
         call();
         return call();
       };
     case 6:
-      return function() {
+      return function () {
         call();
         call();
         call();
@@ -46979,7 +46989,7 @@ exports.repeatCall = function(call, times) {
         return call();
       };
     case 8:
-      return function() {
+      return function () {
         call();
         call();
         call();
@@ -46990,69 +47000,69 @@ exports.repeatCall = function(call, times) {
   }
 };
 
-exports.makeEmitter = function(thunk, items, channels) {
+exports.makeEmitter = function (thunk, items, channels) {
   var inner, n, next, outer;
-  inner = (function() {
+  inner = function () {
     switch (channels) {
       case 0:
-        return function() {
+        return function () {
           return true;
         };
       case 1:
-        return function(emit) {
+        return function (emit) {
           return emit(thunk());
         };
       case 2:
-        return function(emit) {
+        return function (emit) {
           return emit(thunk(), thunk());
         };
       case 3:
-        return function(emit) {
+        return function (emit) {
           return emit(thunk(), thunk(), thunk());
         };
       case 4:
-        return function(emit) {
+        return function (emit) {
           return emit(thunk(), thunk(), thunk(), thunk());
         };
       case 6:
-        return function(emit) {
+        return function (emit) {
           return emit(thunk(), thunk(), thunk(), thunk(), thunk(), thunk());
         };
       case 8:
-        return function(emit) {
+        return function (emit) {
           return emit(thunk(), thunk(), thunk(), thunk(), thunk(), thunk(), thunk(), thunk());
         };
     }
-  })();
+  }();
   next = null;
   while (items > 0) {
     n = Math.min(items, 8);
-    outer = (function() {
+    outer = function () {
       switch (n) {
         case 1:
-          return function(emit) {
+          return function (emit) {
             return inner(emit);
           };
         case 2:
-          return function(emit) {
+          return function (emit) {
             inner(emit);
             return inner(emit);
           };
         case 3:
-          return function(emit) {
+          return function (emit) {
             inner(emit);
             inner(emit);
             return inner(emit);
           };
         case 4:
-          return function(emit) {
+          return function (emit) {
             inner(emit);
             inner(emit);
             inner(emit);
             return inner(emit);
           };
         case 5:
-          return function(emit) {
+          return function (emit) {
             inner(emit);
             inner(emit);
             inner(emit);
@@ -47060,7 +47070,7 @@ exports.makeEmitter = function(thunk, items, channels) {
             return inner(emit);
           };
         case 6:
-          return function(emit) {
+          return function (emit) {
             inner(emit);
             inner(emit);
             inner(emit);
@@ -47069,7 +47079,7 @@ exports.makeEmitter = function(thunk, items, channels) {
             return inner(emit);
           };
         case 7:
-          return function(emit) {
+          return function (emit) {
             inner(emit);
             inner(emit);
             inner(emit);
@@ -47079,7 +47089,7 @@ exports.makeEmitter = function(thunk, items, channels) {
             return inner(emit);
           };
         case 8:
-          return function(emit) {
+          return function (emit) {
             inner(emit);
             inner(emit);
             inner(emit);
@@ -47090,20 +47100,20 @@ exports.makeEmitter = function(thunk, items, channels) {
             return inner(emit);
           };
       }
-    })();
+    }();
     if (next != null) {
-      next = (function(outer, next) {
-        return function(emit) {
+      next = function (outer, next) {
+        return function (emit) {
           outer(emit);
           return next(emit);
         };
-      })(outer, next);
+      }(outer, next);
     } else {
       next = outer;
     }
     items -= n;
   }
-  outer = next != null ? next : function() {
+  outer = next != null ? next : function () {
     return true;
   };
   outer.reset = thunk.reset;
@@ -47111,7 +47121,7 @@ exports.makeEmitter = function(thunk, items, channels) {
   return outer;
 };
 
-exports.getThunk = function(data) {
+exports.getThunk = function (data) {
   var a, b, c, d, done, first, fourth, i, j, k, l, m, nesting, ref, ref1, ref2, ref3, ref4, ref5, ref6, ref7, ref8, ref9, second, sizes, third, thunk;
   sizes = getSizes(data);
   nesting = sizes.length;
@@ -47122,24 +47132,24 @@ exports.getThunk = function(data) {
   done = false;
   switch (nesting) {
     case 0:
-      thunk = function() {
+      thunk = function thunk() {
         return 0;
       };
-      thunk.reset = function() {};
+      thunk.reset = function () {};
       break;
     case 1:
       i = 0;
-      thunk = function() {
+      thunk = function thunk() {
         return data[i++];
       };
-      thunk.reset = function() {
+      thunk.reset = function () {
         return i = 0;
       };
       break;
     case 2:
       i = j = 0;
       first = (ref = data[j]) != null ? ref : [];
-      thunk = function() {
+      thunk = function thunk() {
         var ref1, x;
         x = first[i++];
         if (i === a) {
@@ -47149,7 +47159,7 @@ exports.getThunk = function(data) {
         }
         return x;
       };
-      thunk.reset = function() {
+      thunk.reset = function () {
         var ref1;
         i = j = 0;
         first = (ref1 = data[j]) != null ? ref1 : [];
@@ -47159,7 +47169,7 @@ exports.getThunk = function(data) {
       i = j = k = 0;
       second = (ref1 = data[k]) != null ? ref1 : [];
       first = (ref2 = second[j]) != null ? ref2 : [];
-      thunk = function() {
+      thunk = function thunk() {
         var ref3, ref4, x;
         x = first[i++];
         if (i === a) {
@@ -47174,7 +47184,7 @@ exports.getThunk = function(data) {
         }
         return x;
       };
-      thunk.reset = function() {
+      thunk.reset = function () {
         var ref3, ref4;
         i = j = k = 0;
         second = (ref3 = data[k]) != null ? ref3 : [];
@@ -47186,7 +47196,7 @@ exports.getThunk = function(data) {
       third = (ref3 = data[l]) != null ? ref3 : [];
       second = (ref4 = third[k]) != null ? ref4 : [];
       first = (ref5 = second[j]) != null ? ref5 : [];
-      thunk = function() {
+      thunk = function thunk() {
         var ref6, ref7, ref8, x;
         x = first[i++];
         if (i === a) {
@@ -47206,7 +47216,7 @@ exports.getThunk = function(data) {
         }
         return x;
       };
-      thunk.reset = function() {
+      thunk.reset = function () {
         var ref6, ref7, ref8;
         i = j = k = l = 0;
         third = (ref6 = data[l]) != null ? ref6 : [];
@@ -47220,7 +47230,7 @@ exports.getThunk = function(data) {
       third = (ref7 = fourth[l]) != null ? ref7 : [];
       second = (ref8 = third[k]) != null ? ref8 : [];
       first = (ref9 = second[j]) != null ? ref9 : [];
-      thunk = function() {
+      thunk = function thunk() {
         var ref10, ref11, ref12, ref13, x;
         x = first[i++];
         if (i === a) {
@@ -47245,7 +47255,7 @@ exports.getThunk = function(data) {
         }
         return x;
       };
-      thunk.reset = function() {
+      thunk.reset = function () {
         var ref10, ref11, ref12, ref13;
         i = j = k = l = m = 0;
         fourth = (ref10 = data[m]) != null ? ref10 : [];
@@ -47254,7 +47264,7 @@ exports.getThunk = function(data) {
         first = (ref13 = second[j]) != null ? ref13 : [];
       };
   }
-  thunk.rebind = function(d) {
+  thunk.rebind = function (d) {
     data = d;
     sizes = getSizes(data);
     if (sizes.length) {
@@ -47273,89 +47283,89 @@ exports.getThunk = function(data) {
   return thunk;
 };
 
-exports.getStreamer = function(array, samples, channels, items) {
+exports.getStreamer = function (array, samples, channels, items) {
   var consume, count, done, emit, i, j, limit, reset, skip;
   limit = i = j = 0;
-  reset = function() {
+  reset = function reset() {
     limit = samples * channels * items;
     return i = j = 0;
   };
-  count = function() {
+  count = function count() {
     return j;
   };
-  done = function() {
+  done = function done() {
     return limit - i <= 0;
   };
-  skip = (function() {
+  skip = function () {
     switch (channels) {
       case 1:
-        return function(n) {
+        return function (n) {
           i += n;
           j += n;
         };
       case 2:
-        return function(n) {
+        return function (n) {
           i += n * 2;
           j += n;
         };
       case 3:
-        return function(n) {
+        return function (n) {
           i += n * 3;
           j += n;
         };
       case 4:
-        return function(n) {
+        return function (n) {
           i += n * 4;
           j += n;
         };
     }
-  })();
-  consume = (function() {
+  }();
+  consume = function () {
     switch (channels) {
       case 1:
-        return function(emit) {
+        return function (emit) {
           emit(array[i++]);
           ++j;
         };
       case 2:
-        return function(emit) {
+        return function (emit) {
           emit(array[i++], array[i++]);
           ++j;
         };
       case 3:
-        return function(emit) {
+        return function (emit) {
           emit(array[i++], array[i++], array[i++]);
           ++j;
         };
       case 4:
-        return function(emit) {
+        return function (emit) {
           emit(array[i++], array[i++], array[i++], array[i++]);
           ++j;
         };
     }
-  })();
-  emit = (function() {
+  }();
+  emit = function () {
     switch (channels) {
       case 1:
-        return function(x) {
+        return function (x) {
           array[i++] = x;
           ++j;
         };
       case 2:
-        return function(x, y) {
+        return function (x, y) {
           array[i++] = x;
           array[i++] = y;
           ++j;
         };
       case 3:
-        return function(x, y, z) {
+        return function (x, y, z) {
           array[i++] = x;
           array[i++] = y;
           array[i++] = z;
           ++j;
         };
       case 4:
-        return function(x, y, z, w) {
+        return function (x, y, z, w) {
           array[i++] = x;
           array[i++] = y;
           array[i++] = z;
@@ -47363,7 +47373,7 @@ exports.getStreamer = function(array, samples, channels, items) {
           ++j;
         };
     }
-  })();
+  }();
   consume.reset = reset;
   emit.reset = reset;
   reset();
@@ -47377,19 +47387,19 @@ exports.getStreamer = function(array, samples, channels, items) {
   };
 };
 
-exports.getLerpEmitter = function(expr1, expr2) {
+exports.getLerpEmitter = function (expr1, expr2) {
   var args, emit1, emit2, emitter, lerp1, lerp2, p, q, r, s, scratch;
   scratch = new Float32Array(4096);
   lerp1 = lerp2 = 0.5;
   p = q = r = s = 0;
-  emit1 = function(x, y, z, w) {
+  emit1 = function emit1(x, y, z, w) {
     r++;
     scratch[p++] = x * lerp1;
     scratch[p++] = y * lerp1;
     scratch[p++] = z * lerp1;
     return scratch[p++] = w * lerp1;
   };
-  emit2 = function(x, y, z, w) {
+  emit2 = function emit2(x, y, z, w) {
     s++;
     scratch[q++] += x * lerp2;
     scratch[q++] += y * lerp2;
@@ -47398,7 +47408,7 @@ exports.getLerpEmitter = function(expr1, expr2) {
   };
   args = Math.max(expr1.length, expr2.length);
   if (args <= 3) {
-    emitter = function(emit, x, i) {
+    emitter = function emitter(emit, x, i) {
       var k, l, n, o, ref, results;
       p = q = r = s = 0;
       expr1(emit1, x, i);
@@ -47412,7 +47422,7 @@ exports.getLerpEmitter = function(expr1, expr2) {
       return results;
     };
   } else if (args <= 5) {
-    emitter = function(emit, x, y, i, j) {
+    emitter = function emitter(emit, x, y, i, j) {
       var k, l, n, o, ref, results;
       p = q = r = s = 0;
       expr1(emit1, x, y, i, j);
@@ -47426,7 +47436,7 @@ exports.getLerpEmitter = function(expr1, expr2) {
       return results;
     };
   } else if (args <= 7) {
-    emitter = function(emit, x, y, z, i, j, k) {
+    emitter = function emitter(emit, x, y, z, i, j, k) {
       var l, n, o, ref, results;
       p = q = r = s = 0;
       expr1(emit1, x, y, z, i, j, k);
@@ -47440,7 +47450,7 @@ exports.getLerpEmitter = function(expr1, expr2) {
       return results;
     };
   } else if (args <= 9) {
-    emitter = function(emit, x, y, z, w, i, j, k, l) {
+    emitter = function emitter(emit, x, y, z, w, i, j, k, l) {
       var n, o, ref, results;
       p = q = r = s = 0;
       expr1(emit1, x, y, z, w, i, j, k, l);
@@ -47454,7 +47464,7 @@ exports.getLerpEmitter = function(expr1, expr2) {
       return results;
     };
   } else {
-    emitter = function(emit, x, y, z, w, i, j, k, l, d, t) {
+    emitter = function emitter(emit, x, y, z, w, i, j, k, l, d, t) {
       var n, o, ref, results;
       p = q = 0;
       expr1(emit1, x, y, z, w, i, j, k, l, d, t);
@@ -47468,26 +47478,26 @@ exports.getLerpEmitter = function(expr1, expr2) {
       return results;
     };
   }
-  emitter.lerp = function(f) {
+  emitter.lerp = function (f) {
     var ref;
     return ref = [1 - f, f], lerp1 = ref[0], lerp2 = ref[1], ref;
   };
   return emitter;
 };
 
-exports.getLerpThunk = function(data1, data2) {
+exports.getLerpThunk = function (data1, data2) {
   var n, n1, n2, scratch, thunk1, thunk2;
-  n1 = exports.getSizes(data1).reduce(function(a, b) {
+  n1 = exports.getSizes(data1).reduce(function (a, b) {
     return a * b;
   });
-  n2 = exports.getSizes(data2).reduce(function(a, b) {
+  n2 = exports.getSizes(data2).reduce(function (a, b) {
     return a * b;
   });
   n = Math.min(n1, n2);
   thunk1 = exports.getThunk(data1);
   thunk2 = exports.getThunk(data2);
   scratch = new Float32Array(n);
-  scratch.lerp = function(f) {
+  scratch.lerp = function (f) {
     var a, b, i, results;
     thunk1.reset();
     thunk2.reset();
@@ -47504,29 +47514,42 @@ exports.getLerpThunk = function(data1, data2) {
 };
 
 },{}],4:[function(require,module,exports){
+"use strict";
+
 var ease, π;
 
 π = Math.PI;
 
 ease = {
-  clamp: function(x, a, b) {
+  clamp: function clamp(x, a, b) {
     return Math.max(a, Math.min(b, x));
   },
-  cosine: function(x) {
+  cosine: function cosine(x) {
     return .5 - .5 * Math.cos(ease.clamp(x, 0, 1) * π);
   },
-  binary: function(x) {
+  binary: function binary(x) {
     return +(x >= .5);
   },
-  hold: function(x) {
+  hold: function hold(x) {
     return +(x >= 1);
   }
 };
 
 module.exports = ease;
+
 },{}],5:[function(require,module,exports){
-var index, letters, parseOrder, toFloatString, toType,
-  indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+'use strict';
+
+var index,
+    letters,
+    parseOrder,
+    toFloatString,
+    toType,
+    indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
 
 letters = 'xyzw'.split('');
 
@@ -47538,7 +47561,7 @@ index = {
   w: 3
 };
 
-parseOrder = function(order) {
+parseOrder = function parseOrder(order) {
   if (order === "" + order) {
     order = order.split('');
   }
@@ -47548,7 +47571,7 @@ parseOrder = function(order) {
   return order;
 };
 
-toType = function(type) {
+toType = function toType(type) {
   if (type === +type) {
     type = 'vec' + type;
   }
@@ -47558,14 +47581,14 @@ toType = function(type) {
   return type;
 };
 
-toFloatString = function(value) {
+toFloatString = function toFloatString(value) {
   value = "" + value;
   if (value.indexOf('.') < 0) {
     return value += '.0';
   }
 };
 
-exports.mapByte2FloatOffset = function(stretch) {
+exports.mapByte2FloatOffset = function (stretch) {
   var factor;
   if (stretch == null) {
     stretch = 4;
@@ -47574,23 +47597,23 @@ exports.mapByte2FloatOffset = function(stretch) {
   return "vec4 float2ByteIndex(vec4 xyzw, out float channelIndex) {\n  float relative = xyzw.w / " + factor + ";\n  float w = floor(relative);\n  channelIndex = (relative - w) * " + factor + ";\n  return vec4(xyzw.xyz, w);\n}";
 };
 
-exports.sample2DArray = function(textures) {
-  var body, divide;
-  divide = function(a, b) {
+exports.sample2DArray = function (textures) {
+  var body, _divide;
+  _divide = function divide(a, b) {
     var mid, out;
     if (a === b) {
       out = "return texture2D(dataTextures[" + a + "], uv);";
     } else {
       mid = Math.ceil(a + (b - a) / 2);
-      out = "if (z < " + (mid - .5) + ") {\n  " + (divide(a, mid - 1)) + "\n}\nelse {\n  " + (divide(mid, b)) + "\n}";
+      out = "if (z < " + (mid - .5) + ") {\n  " + _divide(a, mid - 1) + "\n}\nelse {\n  " + _divide(mid, b) + "\n}";
     }
     return out = out.replace(/\n/g, "\n  ");
   };
-  body = divide(0, textures - 1);
+  body = _divide(0, textures - 1);
   return "uniform sampler2D dataTextures[" + textures + "];\n\nvec4 sample2DArray(vec2 uv, float z) {\n  " + body + "\n}";
 };
 
-exports.binaryOperator = function(type, op, curry) {
+exports.binaryOperator = function (type, op, curry) {
   type = toType(type);
   if (curry != null) {
     return type + " binaryOperator(" + type + " a) {\n  return a " + op + " " + curry + ";\n}";
@@ -47599,7 +47622,7 @@ exports.binaryOperator = function(type, op, curry) {
   }
 };
 
-exports.extendVec = function(from, to, value) {
+exports.extendVec = function (from, to, value) {
   var ctor, diff, k, parts, results;
   if (value == null) {
     value = 0;
@@ -47611,11 +47634,13 @@ exports.extendVec = function(from, to, value) {
   from = toType(from);
   to = toType(to);
   value = toFloatString(value);
-  parts = (function() {
+  parts = function () {
     results = [];
-    for (var k = 0; 0 <= diff ? k <= diff : k >= diff; 0 <= diff ? k++ : k--){ results.push(k); }
+    for (var k = 0; 0 <= diff ? k <= diff : k >= diff; 0 <= diff ? k++ : k--) {
+      results.push(k);
+    }
     return results;
-  }).apply(this).map(function(x) {
+  }.apply(this).map(function (x) {
     if (x) {
       return value;
     } else {
@@ -47626,22 +47651,22 @@ exports.extendVec = function(from, to, value) {
   return to + " extendVec(" + from + " v) { return " + to + "(" + ctor + "); }";
 };
 
-exports.truncateVec = function(from, to) {
+exports.truncateVec = function (from, to) {
   var swizzle;
   if (from < to) {
     return exports.extendVec(from, to);
   }
-  swizzle = '.' + ('xyzw'.substr(0, to));
+  swizzle = '.' + 'xyzw'.substr(0, to);
   from = toType(from);
   to = toType(to);
   return to + " truncateVec(" + from + " v) { return v" + swizzle + "; }";
 };
 
-exports.injectVec4 = function(order) {
+exports.injectVec4 = function (order) {
   var args, channel, i, k, len, mask, swizzler;
   swizzler = ['0.0', '0.0', '0.0', '0.0'];
   order = parseOrder(order);
-  order = order.map(function(v) {
+  order = order.map(function (v) {
     if (v === "" + v) {
       return index[v];
     } else {
@@ -47657,7 +47682,7 @@ exports.injectVec4 = function(order) {
   return "vec4 inject(" + args + ") {\n  return vec4(" + mask + ");\n}";
 };
 
-exports.swizzleVec4 = function(order, size) {
+exports.swizzleVec4 = function (order, size) {
   var lookup, mask;
   if (size == null) {
     size = null;
@@ -47667,7 +47692,7 @@ exports.swizzleVec4 = function(order, size) {
     size = order.length;
   }
   order = parseOrder(order);
-  order = order.map(function(v) {
+  order = order.map(function (v) {
     var ref;
     if (ref = +v, indexOf.call([0, 1, 2, 3, 4], ref) >= 0) {
       v = +v;
@@ -47684,11 +47709,11 @@ exports.swizzleVec4 = function(order, size) {
   return ("vec" + size + " swizzle(vec4 xyzw) {\n  return vec" + size + "(" + mask + ");\n}").replace(/vec1/g, 'float');
 };
 
-exports.invertSwizzleVec4 = function(order) {
+exports.invertSwizzleVec4 = function (order) {
   var i, j, k, len, letter, mask, src, swizzler;
   swizzler = ['0.0', '0.0', '0.0', '0.0'];
   order = parseOrder(order);
-  order = order.map(function(v) {
+  order = order.map(function (v) {
     if (v === +v) {
       return letters[v - 1];
     } else {
@@ -47705,11 +47730,11 @@ exports.invertSwizzleVec4 = function(order) {
   return "vec4 invertSwizzle(vec4 xyzw) {\n  return vec4(" + mask + ");\n}";
 };
 
-exports.identity = function(type) {
+exports.identity = function (type) {
   var args;
   args = [].slice.call(arguments);
   if (args.length > 1) {
-    args = args.map(function(t, i) {
+    args = args.map(function (t, i) {
       return ['inout', t, String.fromCharCode(97 + i)].join(' ');
     });
     args = args.join(', ');
@@ -47719,13 +47744,15 @@ exports.identity = function(type) {
   }
 };
 
-exports.constant = function(type, value) {
+exports.constant = function (type, value) {
   return type + " constant() {\n  return " + value + ";\n}";
 };
 
 exports.toType = toType;
 
 },{}],6:[function(require,module,exports){
+'use strict';
+
 exports.Axis = require('./axis');
 exports.Data = require('./data');
 exports.Ease = require('./ease');
@@ -47735,8 +47762,11 @@ exports.Pretty = require('./pretty');
 exports.Three = require('./three');
 exports.Ticks = require('./ticks');
 exports.VDOM = require('./vdom');
+
 },{"./axis":2,"./data":3,"./ease":4,"./glsl":5,"./js":7,"./pretty":8,"./three":9,"./ticks":10,"./vdom":11}],7:[function(require,module,exports){
-exports.merge = function() {
+"use strict";
+
+exports.merge = function () {
   var i, k, len, obj, v, x;
   x = {};
   for (i = 0, len = arguments.length; i < len; i++) {
@@ -47749,17 +47779,17 @@ exports.merge = function() {
   return x;
 };
 
-exports.clone = function(o) {
+exports.clone = function (o) {
   return JSON.parse(JSON.serialize(o));
 };
 
-exports.parseQuoted = function(str) {
+exports.parseQuoted = function (str) {
   var accum, char, chunk, i, len, list, munch, quote, token, unescape;
   accum = "";
-  unescape = function(str) {
+  unescape = function unescape(str) {
     return str = str.replace(/\\/g, '');
   };
-  munch = function(next) {
+  munch = function munch(next) {
     if (accum.length) {
       list.push(unescape(accum));
     }
@@ -47807,21 +47837,25 @@ exports.parseQuoted = function(str) {
 };
 
 },{}],8:[function(require,module,exports){
+"use strict";
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
 var NUMBER_PRECISION, NUMBER_THRESHOLD, checkFactor, checkUnit, escapeHTML, formatFactors, formatFraction, formatMultiple, formatPrimes, prettyFormat, prettyJSXBind, prettyJSXPair, prettyJSXProp, prettyMarkup, prettyNumber, prettyPrint;
 
 NUMBER_PRECISION = 5;
 
 NUMBER_THRESHOLD = 0.0001;
 
-checkFactor = function(v, f) {
+checkFactor = function checkFactor(v, f) {
   return Math.abs(v / f - Math.round(v / f)) < NUMBER_THRESHOLD;
 };
 
-checkUnit = function(v) {
+checkUnit = function checkUnit(v) {
   return checkFactor(v, 1);
 };
 
-formatMultiple = function(v, f, k, compact) {
+formatMultiple = function formatMultiple(v, f, k, compact) {
   var d;
   d = Math.round(v / f);
   if (d === 1) {
@@ -47840,7 +47874,7 @@ formatMultiple = function(v, f, k, compact) {
   }
 };
 
-formatFraction = function(v, f, k, compact) {
+formatFraction = function formatFraction(v, f, k, compact) {
   var d;
   d = Math.round(v * f);
   if (Math.abs(d) === 1) {
@@ -47852,56 +47886,54 @@ formatFraction = function(v, f, k, compact) {
   return d + "/" + f;
 };
 
-formatFactors = [
-  {
-    1: 1
-  }, {
-    1: 1,
-    τ: Math.PI * 2
-  }, {
-    1: 1,
-    π: Math.PI
-  }, {
-    1: 1,
-    τ: Math.PI * 2,
-    π: Math.PI
-  }, {
-    1: 1,
-    e: Math.E
-  }, {
-    1: 1,
-    τ: Math.PI * 2,
-    e: Math.E
-  }, {
-    1: 1,
-    π: Math.PI,
-    e: Math.E
-  }, {
-    1: 1,
-    τ: Math.PI * 2,
-    π: Math.PI,
-    e: Math.E
-  }
-];
+formatFactors = [{
+  1: 1
+}, {
+  1: 1,
+  τ: Math.PI * 2
+}, {
+  1: 1,
+  π: Math.PI
+}, {
+  1: 1,
+  τ: Math.PI * 2,
+  π: Math.PI
+}, {
+  1: 1,
+  e: Math.E
+}, {
+  1: 1,
+  τ: Math.PI * 2,
+  e: Math.E
+}, {
+  1: 1,
+  π: Math.PI,
+  e: Math.E
+}, {
+  1: 1,
+  τ: Math.PI * 2,
+  π: Math.PI,
+  e: Math.E
+}];
 
 formatPrimes = [[2 * 2 * 3 * 5 * 7, [2, 3, 5, 7]], [2 * 2 * 2 * 3 * 3 * 5 * 5 * 7 * 7, [2, 3, 5, 7]], [2 * 2 * 3 * 5 * 7 * 11 * 13, [2, 3, 5, 7, 11, 13]], [2 * 2 * 17 * 19 * 23 * 29, [2, 17, 19, 23, 29]], [256 * 256, [2]], [1000000, [2, 5]]];
 
-prettyNumber = function(options) {
+prettyNumber = function prettyNumber(options) {
   var cache, cacheIndex, compact, e, formatIndex, numberCache, pi, precision, tau, threshold;
   if (options) {
     cache = options.cache, compact = options.compact, tau = options.tau, pi = options.pi, e = options.e, threshold = options.threshold, precision = options.precision;
   }
-  compact = +(!!(compact != null ? compact : true));
-  tau = +(!!(tau != null ? tau : true));
-  pi = +(!!(pi != null ? pi : true));
-  e = +(!!(e != null ? e : true));
-  cache = +(!!(cache != null ? cache : true));
+  compact = +!!(compact != null ? compact : true);
+  tau = +!!(tau != null ? tau : true);
+  pi = +!!(pi != null ? pi : true);
+  e = +!!(e != null ? e : true);
+  cache = +!!(cache != null ? cache : true);
   threshold = +(threshold != null ? threshold : NUMBER_THRESHOLD);
   precision = +(precision != null ? precision : NUMBER_PRECISION);
   formatIndex = tau + pi * 2 + e * 4;
   cacheIndex = formatIndex + threshold + precision;
   numberCache = cache ? {} : null;
-  return function(v) {
+  return function (v) {
     var best, cached, d, denom, f, i, j, k, len, len1, list, match, n, numer, out, p, ref, ref1;
     if (numberCache != null) {
       if ((cached = numberCache[v]) != null) {
@@ -47913,7 +47945,7 @@ prettyNumber = function(options) {
     }
     out = "" + v;
     best = out.length + out.indexOf('.') + 2;
-    match = function(x) {
+    match = function match(x) {
       var d;
       d = x.length;
       if (d <= best) {
@@ -47925,7 +47957,7 @@ prettyNumber = function(options) {
     for (k in ref) {
       f = ref[k];
       if (checkUnit(v / f)) {
-        match("" + (formatMultiple(v / f, 1, k, compact)));
+        match("" + formatMultiple(v / f, 1, k, compact));
       } else {
         for (i = 0, len = formatPrimes.length; i < len; i++) {
           ref1 = formatPrimes[i], denom = ref1[0], list = ref1[1];
@@ -47938,14 +47970,14 @@ prettyNumber = function(options) {
                 denom = d;
               }
             }
-            match("" + (formatFraction(v / f, denom, k, compact)));
+            match("" + formatFraction(v / f, denom, k, compact));
             break;
           }
         }
       }
     }
     if (("" + v).length > NUMBER_PRECISION) {
-      match("" + (v.toPrecision(NUMBER_PRECISION)));
+      match("" + v.toPrecision(NUMBER_PRECISION));
     }
     if (numberCache != null) {
       numberCache[v] = out;
@@ -47954,7 +47986,7 @@ prettyNumber = function(options) {
   };
 };
 
-prettyPrint = function(markup, level) {
+prettyPrint = function prettyPrint(markup, level) {
   if (level == null) {
     level = 'info';
   }
@@ -47962,7 +47994,7 @@ prettyPrint = function(markup, level) {
   return console[level].apply(console, markup);
 };
 
-prettyMarkup = function(markup) {
+prettyMarkup = function prettyMarkup(markup) {
   var args, attr, nested, obj, quoted, str, tag, txt;
   tag = 'color:rgb(128,0,128)';
   attr = 'color:rgb(144,64,0)';
@@ -47972,18 +48004,18 @@ prettyMarkup = function(markup) {
   quoted = false;
   nested = 0;
   args = [];
-  markup = markup.replace(/(\\[<={}> "'])|(=>|[<={}> "'])/g, function(_, escape, char) {
+  markup = markup.replace(/(\\[<={}> "'])|(=>|[<={}> "'])/g, function (_, escape, char) {
     var res;
     if (escape != null ? escape.length : void 0) {
       return escape;
     }
-    if (quoted && (char !== '"' && char !== "'")) {
+    if (quoted && char !== '"' && char !== "'") {
       return char;
     }
-    if (nested && (char !== '"' && char !== "'" && char !== '{' && char !== "}")) {
+    if (nested && char !== '"' && char !== "'" && char !== '{' && char !== "}") {
       return char;
     }
-    return res = (function() {
+    return res = function () {
       switch (char) {
         case '<':
           args.push(tag);
@@ -48029,46 +48061,46 @@ prettyMarkup = function(markup) {
         default:
           return char;
       }
-    })();
+    }();
   });
   return [markup].concat(args);
 };
 
-prettyJSXProp = function(k, v) {
+prettyJSXProp = function prettyJSXProp(k, v) {
   return prettyJSXPair(k, v, '=');
 };
 
-prettyJSXBind = function(k, v) {
+prettyJSXBind = function prettyJSXBind(k, v) {
   return prettyJSXPair(k, v, '=>');
 };
 
-prettyJSXPair = (function() {
+prettyJSXPair = function () {
   var formatNumber;
   formatNumber = prettyNumber({
     compact: false
   });
-  return function(k, v, op) {
-    var key, value, wrap;
-    key = function(k) {
-      if ((k === "" + +k) || k.match(/^[A-Za-z_][A-Za-z0-9]*$/)) {
+  return function (k, v, op) {
+    var key, _value, wrap;
+    key = function key(k) {
+      if (k === "" + +k || k.match(/^[A-Za-z_][A-Za-z0-9]*$/)) {
         return k;
       } else {
         return JSON.stringify(k);
       }
     };
-    wrap = function(v) {
+    wrap = function wrap(v) {
       if (v.match('\n*"')) {
         return v;
       } else {
         return "{" + v + "}";
       }
     };
-    value = function(v) {
+    _value = function value(v) {
       var kk, vv;
       if (v instanceof Array) {
-        return "[" + (v.map(value).join(', ')) + "]";
+        return "[" + v.map(_value).join(', ') + "]";
       }
-      switch (typeof v) {
+      switch (typeof v === "undefined" ? "undefined" : _typeof(v)) {
         case 'string':
           if (v.match("\n")) {
             return "\"\n" + v + "\"\n";
@@ -48088,43 +48120,43 @@ prettyJSXPair = (function() {
         case 'number':
           return formatNumber(v);
         default:
-          if ((v != null) && v !== !!v) {
+          if (v != null && v !== !!v) {
             if (v._up != null) {
-              return value(v.map(function(v) {
+              return _value(v.map(function (v) {
                 return v;
               }));
             }
             if (v.toMarkup) {
               return v.toString();
             } else {
-              return "{" + ((function() {
+              return "{" + function () {
                 var results;
                 results = [];
                 for (kk in v) {
                   vv = v[kk];
                   if (v.hasOwnProperty(kk)) {
-                    results.push((key(kk)) + ": " + (value(vv)));
+                    results.push(key(kk) + ": " + _value(vv));
                   }
                 }
                 return results;
-              })()).join(", ") + "}";
+              }().join(", ") + "}";
             }
           } else {
-            return "" + (JSON.stringify(v));
+            return "" + JSON.stringify(v);
           }
       }
     };
-    return [k, op, wrap(value(v))].join('');
+    return [k, op, wrap(_value(v))].join('');
   };
-})();
+}();
 
-escapeHTML = function(str) {
+escapeHTML = function escapeHTML(str) {
   str = str.replace(/&/g, '&amp;');
   str = str.replace(/</g, '&lt;');
   return str = str.replace(/"/g, '&quot;');
 };
 
-prettyFormat = function(str) {
+prettyFormat = function prettyFormat(str) {
   var arg, args, i, len, out;
   args = [].slice.call(arguments);
   args.shift();
@@ -48132,12 +48164,12 @@ prettyFormat = function(str) {
   str = escapeHTML(str);
   for (i = 0, len = args.length; i < len; i++) {
     arg = args[i];
-    str = str.replace(/%([a-z])/, function(_, f) {
+    str = str.replace(/%([a-z])/, function (_, f) {
       var v;
       v = args.shift();
       switch (f) {
         case 'c':
-          return "</span><span style=\"" + (escapeHTML(v)) + "\">";
+          return "</span><span style=\"" + escapeHTML(v) + "\">";
         default:
           return escapeHTML(v);
       }
@@ -48158,14 +48190,15 @@ module.exports = {
   }
 };
 
-
 /*
 for x in [1, 2, 1/2, 3, 1/3, Math.PI, Math.PI / 2, Math.PI * 2, Math.PI * 3, Math.PI * 4, Math.PI * 3 / 4, Math.E * 100, Math.E / 100]
   console.log prettyNumber({})(x)
  */
 
 },{}],9:[function(require,module,exports){
-exports.paramToGL = function(gl, p) {
+'use strict';
+
+exports.paramToGL = function (gl, p) {
   if (p === THREE.RepeatWrapping) {
     return gl.REPEAT;
   }
@@ -48283,7 +48316,7 @@ exports.paramToGL = function(gl, p) {
   return 0;
 };
 
-exports.paramToArrayStorage = function(type) {
+exports.paramToArrayStorage = function (type) {
   switch (type) {
     case THREE.UnsignedByteType:
       return Uint8Array;
@@ -48302,20 +48335,20 @@ exports.paramToArrayStorage = function(type) {
   }
 };
 
-exports.swizzleToEulerOrder = function(swizzle) {
-  return swizzle.map(function(i) {
+exports.swizzleToEulerOrder = function (swizzle) {
+  return swizzle.map(function (i) {
     return ['', 'X', 'Y', 'Z'][i];
   }).join('');
 };
 
-exports.transformComposer = function() {
+exports.transformComposer = function () {
   var euler, pos, quat, scl, transform;
-  euler = new THREE.Euler;
-  quat = new THREE.Quaternion;
-  pos = new THREE.Vector3;
-  scl = new THREE.Vector3;
-  transform = new THREE.Matrix4;
-  return function(position, rotation, quaternion, scale, matrix, eulerOrder) {
+  euler = new THREE.Euler();
+  quat = new THREE.Quaternion();
+  pos = new THREE.Vector3();
+  scl = new THREE.Vector3();
+  transform = new THREE.Matrix4();
+  return function (position, rotation, quaternion, scale, matrix, eulerOrder) {
     if (eulerOrder == null) {
       eulerOrder = 'XYZ';
     }
@@ -48350,6 +48383,8 @@ exports.transformComposer = function() {
 };
 
 },{}],10:[function(require,module,exports){
+"use strict";
+
 /*
  Generate equally spaced ticks in a range at sensible positions.
  
@@ -48365,7 +48400,7 @@ exports.transformComposer = function() {
  */
 var LINEAR, LOG, linear, log, make;
 
-linear = function(min, max, n, unit, base, factor, start, end, zero, nice) {
+linear = function linear(min, max, n, unit, base, factor, start, end, zero, nice) {
   var distance, f, factors, i, ideal, ref, span, step, steps, ticks;
   if (nice == null) {
     nice = true;
@@ -48377,14 +48412,14 @@ linear = function(min, max, n, unit, base, factor, start, end, zero, nice) {
   span = max - min;
   ideal = span / n;
   if (!nice) {
-    ticks = (function() {
+    ticks = function () {
       var j, ref1, results;
       results = [];
       for (i = j = 0, ref1 = n; 0 <= ref1 ? j <= ref1 : j >= ref1; i = 0 <= ref1 ? ++j : --j) {
         results.push(min + i * ideal);
       }
       return results;
-    })();
+    }();
     if (!start) {
       ticks.shift();
     }
@@ -48392,7 +48427,7 @@ linear = function(min, max, n, unit, base, factor, start, end, zero, nice) {
       ticks.pop();
     }
     if (!zero) {
-      ticks = ticks.filter(function(x) {
+      ticks = ticks.filter(function (x) {
         return x !== 0;
       });
     }
@@ -48400,9 +48435,9 @@ linear = function(min, max, n, unit, base, factor, start, end, zero, nice) {
   }
   unit || (unit = 1);
   base || (base = 10);
-  ref = unit * (Math.pow(base, Math.floor(Math.log(ideal / unit) / Math.log(base))));
+  ref = unit * Math.pow(base, Math.floor(Math.log(ideal / unit) / Math.log(base)));
   factors = base % 2 === 0 ? [base / 2, 1, 1 / 2] : base % 3 === 0 ? [base / 3, 1, 1 / 3] : [1];
-  steps = (function() {
+  steps = function () {
     var j, len, results;
     results = [];
     for (j = 0, len = factors.length; j < len; j++) {
@@ -48410,9 +48445,9 @@ linear = function(min, max, n, unit, base, factor, start, end, zero, nice) {
       results.push(ref * f);
     }
     return results;
-  })();
+  }();
   distance = Infinity;
-  step = steps.reduce(function(ref, step) {
+  step = steps.reduce(function (ref, step) {
     var d;
     f = step / ideal;
     d = Math.max(f, 1 / f);
@@ -48424,31 +48459,30 @@ linear = function(min, max, n, unit, base, factor, start, end, zero, nice) {
     }
   }, ref);
   step *= factor;
-  min = (Math.ceil((min / step) + +(!start))) * step;
-  max = (Math.floor(max / step) - +(!end)) * step;
+  min = Math.ceil(min / step + +!start) * step;
+  max = (Math.floor(max / step) - +!end) * step;
   n = Math.ceil((max - min) / step);
-  ticks = (function() {
+  ticks = function () {
     var j, ref1, results;
     results = [];
     for (i = j = 0, ref1 = n; 0 <= ref1 ? j <= ref1 : j >= ref1; i = 0 <= ref1 ? ++j : --j) {
       results.push(min + i * step);
     }
     return results;
-  })();
+  }();
   if (!zero) {
-    ticks = ticks.filter(function(x) {
+    ticks = ticks.filter(function (x) {
       return x !== 0;
     });
   }
   return ticks;
 };
 
-
 /*
  Generate logarithmically spaced ticks in a range at sensible positions.
  */
 
-log = function(min, max, n, unit, base, bias, start, end, zero, nice) {
+log = function log(min, max, n, unit, base, bias, start, end, zero, nice) {
   throw new Error("Log ticks not yet implemented.");
 };
 
@@ -48456,7 +48490,7 @@ LINEAR = 0;
 
 LOG = 1;
 
-make = function(type, min, max, n, unit, base, bias, start, end, zero, nice) {
+make = function make(type, min, max, n, unit, base, bias, start, end, zero, nice) {
   switch (type) {
     case LINEAR:
       return linear(min, max, n, unit, base, bias, start, end, zero, nice);
@@ -48472,7 +48506,11 @@ exports.linear = linear;
 exports.log = log;
 
 },{}],11:[function(require,module,exports){
-var HEAP, Types, apply, createClass, descriptor, element, hint, id, j, key, len, map, mount, prop, recycle, ref1, set, unmount, unset;
+"use strict";
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+var HEAP, Types, _apply, createClass, descriptor, element, hint, id, j, key, len, map, _mount, prop, _recycle, ref1, set, _unmount, unset;
 
 HEAP = [];
 
@@ -48490,7 +48528,7 @@ Types = {
    */
 };
 
-descriptor = function() {
+descriptor = function descriptor() {
   return {
     id: id++,
     type: null,
@@ -48501,7 +48539,7 @@ descriptor = function() {
   };
 };
 
-hint = function(n) {
+hint = function hint(n) {
   var i, j, ref1, results;
   n *= 2;
   n = Math.max(0, HEAP.length - n);
@@ -48512,7 +48550,7 @@ hint = function(n) {
   return results;
 };
 
-element = function(type, props, children) {
+element = function element(type, props, children) {
   var el;
   el = HEAP.length ? HEAP.pop() : descriptor();
   el.type = type != null ? type : 'div';
@@ -48521,7 +48559,7 @@ element = function(type, props, children) {
   return el;
 };
 
-recycle = function(el) {
+_recycle = function recycle(el) {
   var child, children, j, len;
   if (!el.type) {
     return;
@@ -48532,16 +48570,16 @@ recycle = function(el) {
   if (children != null) {
     for (j = 0, len = children.length; j < len; j++) {
       child = children[j];
-      recycle(child);
+      _recycle(child);
     }
   }
 };
 
-apply = function(el, last, node, parent, index) {
+_apply = function apply(el, last, node, parent, index) {
   var base, child, childNodes, children, comp, dirty, i, j, k, key, l, len, len1, nextChildren, nextProps, nextState, prevProps, prevState, props, ref, ref1, ref2, ref3, ref4, ref5, same, should, type, v, value;
   if (el != null) {
     if (last == null) {
-      return mount(el, parent, index);
+      return _mount(el, parent, index);
     } else {
       if (el instanceof Node) {
         same = el === last;
@@ -48549,12 +48587,12 @@ apply = function(el, last, node, parent, index) {
           return;
         }
       } else {
-        same = typeof el === typeof last && last !== null && el !== null && el.type === last.type;
+        same = (typeof el === "undefined" ? "undefined" : _typeof(el)) === (typeof last === "undefined" ? "undefined" : _typeof(last)) && last !== null && el !== null && el.type === last.type;
       }
       if (!same) {
-        unmount(last.instance, node);
+        _unmount(last.instance, node);
         node.remove();
-        return mount(el, parent, index);
+        return _mount(el, parent, index);
       } else {
         el.instance = last.instance;
         type = ((ref1 = el.type) != null ? ref1.isComponentClass : void 0) ? el.type : Types[el.type];
@@ -48567,13 +48605,13 @@ apply = function(el, last, node, parent, index) {
         }
         if (type != null) {
           dirty = node._COMPONENT_DIRTY;
-          if ((props != null) !== (nextProps != null)) {
+          if (props != null !== (nextProps != null)) {
             dirty = true;
           }
           if (children !== nextChildren) {
             dirty = true;
           }
-          if ((props != null) && (nextProps != null)) {
+          if (props != null && nextProps != null) {
             if (!dirty) {
               for (key in props) {
                 if (!nextProps.hasOwnProperty(key)) {
@@ -48619,7 +48657,7 @@ apply = function(el, last, node, parent, index) {
             comp.children = el.children;
             if (should) {
               el = el.rendered = typeof comp.render === "function" ? comp.render(element, el.props, el.children) : void 0;
-              apply(el, last.rendered, node, parent, index);
+              _apply(el, last.rendered, node, parent, index);
               if (typeof comp.didUpdate === "function") {
                 comp.didUpdate(prevProps, prevState);
               }
@@ -48643,30 +48681,30 @@ apply = function(el, last, node, parent, index) {
             }
           }
           if (nextChildren != null) {
-            if ((ref5 = typeof nextChildren) === 'string' || ref5 === 'number') {
+            if ((ref5 = typeof nextChildren === "undefined" ? "undefined" : _typeof(nextChildren)) === 'string' || ref5 === 'number') {
               if (nextChildren !== children) {
                 node.textContent = nextChildren;
               }
             } else {
               if (nextChildren.type != null) {
-                apply(nextChildren, children, node.childNodes[0], node, 0);
+                _apply(nextChildren, children, node.childNodes[0], node, 0);
               } else {
                 childNodes = node.childNodes;
                 if (children != null) {
                   for (i = j = 0, len = nextChildren.length; j < len; i = ++j) {
                     child = nextChildren[i];
-                    apply(child, children[i], childNodes[i], node, i);
+                    _apply(child, children[i], childNodes[i], node, i);
                   }
                 } else {
                   for (i = l = 0, len1 = nextChildren.length; l < len1; i = ++l) {
                     child = nextChildren[i];
-                    apply(child, null, childNodes[i], node, i);
+                    _apply(child, null, childNodes[i], node, i);
                   }
                 }
               }
             }
           } else if (children != null) {
-            unmount(null, node);
+            _unmount(null, node);
             node.innerHTML = '';
           }
         }
@@ -48675,12 +48713,12 @@ apply = function(el, last, node, parent, index) {
     }
   }
   if (last != null) {
-    unmount(last.instance, node);
+    _unmount(last.instance, node);
     return last.node.remove();
   }
 };
 
-mount = function(el, parent, index) {
+_mount = function mount(el, parent, index) {
   var base, child, children, comp, ctor, i, j, k, key, len, node, ref1, ref2, ref3, ref4, ref5, ref6, type, v, value;
   if (index == null) {
     index = 0;
@@ -48693,7 +48731,7 @@ mount = function(el, parent, index) {
       ctor = ((ref2 = el.type) != null ? ref2.isComponentClass : void 0) ? el.type : Types[el.type];
       if (!ctor) {
         el = el.rendered = element('noscript');
-        node = mount(el, parent, index);
+        node = _mount(el, parent, index);
         return node;
       }
       el.instance = comp = new ctor(parent);
@@ -48715,13 +48753,13 @@ mount = function(el, parent, index) {
         comp.willMount();
       }
       el = el.rendered = typeof comp.render === "function" ? comp.render(element, el.props, el.children) : void 0;
-      node = mount(el, parent, index);
+      node = _mount(el, parent, index);
       if (typeof comp.didMount === "function") {
         comp.didMount(el);
       }
       node._COMPONENT = comp;
       return node;
-    } else if ((ref4 = typeof el) === 'string' || ref4 === 'number') {
+    } else if ((ref4 = typeof el === "undefined" ? "undefined" : _typeof(el)) === 'string' || ref4 === 'number') {
       node = document.createTextNode(el);
     } else {
       node = document.createElement(el.type);
@@ -48733,15 +48771,15 @@ mount = function(el, parent, index) {
     }
     children = el.children;
     if (children != null) {
-      if ((ref6 = typeof children) === 'string' || ref6 === 'number') {
+      if ((ref6 = typeof children === "undefined" ? "undefined" : _typeof(children)) === 'string' || ref6 === 'number') {
         node.textContent = children;
       } else {
         if (children.type != null) {
-          mount(children, node, 0);
+          _mount(children, node, 0);
         } else {
           for (i = j = 0, len = children.length; j < len; i = ++j) {
             child = children[i];
-            mount(child, node, i);
+            _mount(child, node, i);
           }
         }
       }
@@ -48751,7 +48789,7 @@ mount = function(el, parent, index) {
   return node;
 };
 
-unmount = function(comp, node) {
+_unmount = function unmount(comp, node) {
   var child, j, k, len, ref1, results;
   if (comp) {
     if (typeof comp.willUnmount === "function") {
@@ -48765,13 +48803,13 @@ unmount = function(comp, node) {
   results = [];
   for (j = 0, len = ref1.length; j < len; j++) {
     child = ref1[j];
-    unmount(child._COMPONENT, child);
+    _unmount(child._COMPONENT, child);
     results.push(delete child._COMPONENT);
   }
   return results;
 };
 
-prop = function(key) {
+prop = function prop(key) {
   var j, len, prefix, prefixes;
   if (typeof document === 'undefined') {
     return true;
@@ -48797,7 +48835,7 @@ for (j = 0, len = ref1.length; j < len; j++) {
   map[key] = prop(key);
 }
 
-set = function(node, key, value, orig) {
+set = function set(node, key, value, orig) {
   var k, ref2, v;
   if (key === 'style') {
     for (k in value) {
@@ -48817,7 +48855,7 @@ set = function(node, key, value, orig) {
   }
 };
 
-unset = function(node, key, orig) {
+unset = function unset(node, key, orig) {
   var k, ref2, v;
   if (key === 'style') {
     for (k in orig) {
@@ -48834,7 +48872,7 @@ unset = function(node, key, orig) {
   }
 };
 
-createClass = function(prototype) {
+createClass = function createClass(prototype) {
   var Component, a, aliases, b, ref2;
   aliases = {
     willMount: 'componentWillMount',
@@ -48851,13 +48889,13 @@ createClass = function(prototype) {
       prototype[a] = prototype[b];
     }
   }
-  Component = (function() {
+  Component = function () {
     function Component(node, props1, state1, children1) {
       var bind, k, nextState, v;
       this.props = props1 != null ? props1 : {};
       this.state = state1 != null ? state1 : null;
       this.children = children1 != null ? children1 : null;
-      bind = function(f, self) {
+      bind = function bind(f, self) {
         if (typeof f === 'function') {
           return f.bind(self);
         } else {
@@ -48869,7 +48907,7 @@ createClass = function(prototype) {
         this[k] = bind(v, this);
       }
       nextState = null;
-      this.setState = function(state) {
+      this.setState = function (state) {
         if (nextState == null) {
           nextState = state ? nextState != null ? nextState : {} : null;
         }
@@ -48879,7 +48917,7 @@ createClass = function(prototype) {
         }
         node._COMPONENT_DIRTY = true;
       };
-      this.forceUpdate = function() {
+      this.forceUpdate = function () {
         var el, results;
         node._COMPONENT_FORCE = node._COMPONENT_DIRTY = true;
         el = node;
@@ -48893,10 +48931,10 @@ createClass = function(prototype) {
         }
         return results;
       };
-      this.getNextState = function() {
+      this.getNextState = function () {
         return nextState;
       };
-      this.applyNextState = function() {
+      this.applyNextState = function () {
         var prevState, ref2;
         node._COMPONENT_FORCE = node._COMPONENT_DIRTY = false;
         prevState = this.state;
@@ -48907,8 +48945,7 @@ createClass = function(prototype) {
     }
 
     return Component;
-
-  })();
+  }();
   Component.isComponentClass = true;
   Component.prototype.defaultProps = (ref2 = typeof prototype.getDefaultProps === "function" ? prototype.getDefaultProps() : void 0) != null ? ref2 : {};
   return Component;
@@ -48916,14 +48953,16 @@ createClass = function(prototype) {
 
 module.exports = {
   element: element,
-  recycle: recycle,
-  apply: apply,
+  recycle: _recycle,
+  apply: _apply,
   hint: hint,
   Types: Types,
   createClass: createClass
 };
 
 },{}],12:[function(require,module,exports){
+'use strict';
+
 var Context, Model, Overlay, Primitives, Render, Shaders, Stage, Util;
 
 Model = require('./model');
@@ -48940,7 +48979,7 @@ Stage = require('./stage');
 
 Util = require('./util');
 
-Context = (function() {
+Context = function () {
   Context.Namespace = {
     Model: Model,
     Overlay: Overlay,
@@ -48973,7 +49012,7 @@ Context = (function() {
     this.primitives = new Primitives.Factory(Primitives.Types, this);
     this.root = this.primitives.make('root');
     this.model = new Model.Model(this.root);
-    this.guard = new Model.Guard;
+    this.guard = new Model.Guard();
     this.controller = new Stage.Controller(this.model, this.primitives);
     this.animator = new Stage.Animator(this);
     this.api = new Stage.API(this);
@@ -48987,19 +49026,19 @@ Context = (function() {
     };
   }
 
-  Context.prototype.init = function() {
+  Context.prototype.init = function () {
     this.scene.inject();
     this.overlays.inject();
     return this;
   };
 
-  Context.prototype.destroy = function() {
+  Context.prototype.destroy = function () {
     this.scene.unject();
     this.overlays.unject();
     return this;
   };
 
-  Context.prototype.resize = function(size) {
+  Context.prototype.resize = function (size) {
 
     /*
     {
@@ -49025,7 +49064,7 @@ Context = (function() {
     return this;
   };
 
-  Context.prototype.frame = function(time) {
+  Context.prototype.frame = function (time) {
 
     /*
     {
@@ -49039,7 +49078,7 @@ Context = (function() {
     return this;
   };
 
-  Context.prototype.pre = function(time) {
+  Context.prototype.pre = function (time) {
     var base;
     if (!time) {
       time = {
@@ -49064,19 +49103,19 @@ Context = (function() {
     return this;
   };
 
-  Context.prototype.update = function() {
+  Context.prototype.update = function () {
     var base;
     this.animator.update();
     this.attributes.compute();
     this.guard.iterate({
-      step: (function(_this) {
-        return function() {
+      step: function (_this) {
+        return function () {
           var change;
           change = _this.attributes.digest();
           return change || (change = _this.model.digest());
         };
-      })(this),
-      last: function() {
+      }(this),
+      last: function last() {
         return {
           attribute: this.attributes.getLastTrigger(),
           model: this.model.getLastTrigger()
@@ -49091,7 +49130,7 @@ Context = (function() {
     return this;
   };
 
-  Context.prototype.render = function() {
+  Context.prototype.render = function () {
     var base;
     if (typeof (base = this.root.controller).render === "function") {
       base.render();
@@ -49100,7 +49139,7 @@ Context = (function() {
     return this;
   };
 
-  Context.prototype.post = function() {
+  Context.prototype.post = function () {
     var base;
     if (typeof (base = this.root.controller).post === "function") {
       base.post();
@@ -49108,24 +49147,28 @@ Context = (function() {
     return this;
   };
 
-  Context.prototype.setWarmup = function(n) {
+  Context.prototype.setWarmup = function (n) {
     this.scene.warmup(n);
     return this;
   };
 
-  Context.prototype.getPending = function() {
+  Context.prototype.getPending = function () {
     return this.scene.pending.length;
   };
 
   return Context;
-
-})();
+}();
 
 module.exports = Context;
+
 },{"./model":17,"./overlay":23,"./primitives":26,"./render":132,"./shaders":147,"./stage":152,"./util":158}],13:[function(require,module,exports){
+'use strict';
+
+require('./splash');
+
 var Context, k, mathBox, ref, v;
 
-mathBox = function(options) {
+mathBox = function mathBox(options) {
   var ref, three;
   three = THREE.Bootstrap(options);
   if (!three.fallback) {
@@ -49149,7 +49192,8 @@ window.MathBox = exports;
 
 window.mathBox = exports.mathBox = mathBox;
 
-exports.version = '0.0.5';
+var version = '0.0.5';
+//export version;
 
 exports.Context = Context = require('./context');
 
@@ -49159,8 +49203,6 @@ for (k in ref) {
   exports[k] = v;
 }
 
-require('./splash');
-
 THREE.Bootstrap.registerPlugin('mathbox', {
   defaults: {
     init: true,
@@ -49169,13 +49211,13 @@ THREE.Bootstrap.registerPlugin('mathbox', {
     splash: true
   },
   listen: ['ready', 'pre', 'update', 'post', 'resize'],
-  install: function(three) {
+  install: function install(three) {
     var inited;
     inited = false;
     this.first = true;
     return three.MathBox = {
-      init: (function(_this) {
-        return function(options) {
+      init: function (_this) {
+        return function (options) {
           var camera, scene;
           if (inited) {
             return;
@@ -49186,10 +49228,10 @@ THREE.Bootstrap.registerPlugin('mathbox', {
           _this.context = new Context(three.renderer, scene, camera);
           _this.context.api.three = three.three = three;
           _this.context.api.mathbox = three.mathbox = _this.context.api;
-          _this.context.api.start = function() {
+          _this.context.api.start = function () {
             return three.Loop.start();
           };
-          _this.context.api.stop = function() {
+          _this.context.api.stop = function () {
             return three.Loop.stop();
           };
           _this.context.init();
@@ -49204,9 +49246,9 @@ THREE.Bootstrap.registerPlugin('mathbox', {
             context: _this.context
           });
         };
-      })(this),
-      destroy: (function(_this) {
-        return function() {
+      }(this),
+      destroy: function (_this) {
+        return function () {
           if (!inited) {
             return;
           }
@@ -49220,44 +49262,44 @@ THREE.Bootstrap.registerPlugin('mathbox', {
           delete _this.context.api.three;
           return delete _this.context;
         };
-      })(this),
-      object: (function(_this) {
-        return function() {
+      }(this),
+      object: function (_this) {
+        return function () {
           var ref1;
           return (ref1 = _this.context) != null ? ref1.scene.root : void 0;
         };
-      })(this)
+      }(this)
     };
   },
-  uninstall: function(three) {
+  uninstall: function uninstall(three) {
     three.MathBox.destroy();
     return delete three.MathBox;
   },
-  ready: function(event, three) {
+  ready: function ready(event, three) {
     if (this.options.init) {
       three.MathBox.init();
-      return setTimeout((function(_this) {
-        return function() {
+      return setTimeout(function (_this) {
+        return function () {
           if (_this.options.inspect) {
             return _this.inspect(three);
           }
         };
-      })(this));
+      }(this));
     }
   },
-  inspect: function(three) {
+  inspect: function inspect(three) {
     this.context.api.inspect();
     if (!this.options.warmup) {
       return this.info(three);
     }
   },
-  info: function(three) {
+  info: function info(three) {
     var fmt, info;
-    fmt = function(x) {
+    fmt = function fmt(x) {
       var out;
       out = [];
       while (x >= 1000) {
-        out.unshift(("000" + (x % 1000)).slice(-3));
+        out.unshift(("000" + x % 1000).slice(-3));
         x = Math.floor(x / 1000);
       }
       out.unshift(x);
@@ -49266,15 +49308,15 @@ THREE.Bootstrap.registerPlugin('mathbox', {
     info = three.renderer.info.render;
     return console.log('Geometry  ', fmt(info.faces) + ' faces  ', fmt(info.vertices) + ' vertices  ', fmt(info.calls) + ' draw calls  ');
   },
-  resize: function(event, three) {
+  resize: function resize(event, three) {
     var ref1;
     return (ref1 = this.context) != null ? ref1.resize(three.Size) : void 0;
   },
-  pre: function(event, three) {
+  pre: function pre(event, three) {
     var ref1;
     return (ref1 = this.context) != null ? ref1.pre(three.Time) : void 0;
   },
-  update: function(event, three) {
+  update: function update(event, three) {
     var camera, ref1, ref2, ref3;
     if ((ref1 = this.context) != null) {
       ref1.update();
@@ -49288,11 +49330,11 @@ THREE.Bootstrap.registerPlugin('mathbox', {
     this.progress(this.context.getPending(), three);
     return (ref3 = this.context) != null ? ref3.render() : void 0;
   },
-  post: function(event, three) {
+  post: function post(event, three) {
     var ref1;
     return (ref1 = this.context) != null ? ref1.post() : void 0;
   },
-  progress: function(remain, three) {
+  progress: function progress(remain, three) {
     var current, pending, total;
     if (!(remain || this.pending)) {
       return;
@@ -49319,6 +49361,8 @@ THREE.Bootstrap.registerPlugin('mathbox', {
 });
 
 },{"./context":12,"./splash":148}],14:[function(require,module,exports){
+"use strict";
+
 /*
  Custom attribute model
  - Organizes attributes by trait in .attributes
@@ -49338,7 +49382,7 @@ THREE.Bootstrap.registerPlugin('mathbox', {
  */
 var Attributes, Data, shallowCopy;
 
-Attributes = (function() {
+Attributes = function () {
   function Attributes(definitions, context) {
     this.context = context;
     this.traits = definitions.Traits;
@@ -49348,7 +49392,7 @@ Attributes = (function() {
     this.last = null;
   }
 
-  Attributes.prototype.make = function(type) {
+  Attributes.prototype.make = function (type) {
     return {
       "enum": typeof type["enum"] === "function" ? type["enum"]() : void 0,
       type: typeof type.uniform === "function" ? type.uniform() : void 0,
@@ -49356,17 +49400,17 @@ Attributes = (function() {
     };
   };
 
-  Attributes.prototype.apply = function(object, config) {
+  Attributes.prototype.apply = function (object, config) {
     return new Data(object, config, this);
   };
 
-  Attributes.prototype.bind = function(callback) {
+  Attributes.prototype.bind = function (callback) {
     return this.bound.push(callback);
   };
 
-  Attributes.prototype.unbind = function(callback) {
+  Attributes.prototype.unbind = function (callback) {
     var cb;
-    return this.bound = (function() {
+    return this.bound = function () {
       var j, len, ref, results;
       ref = this.bound;
       results = [];
@@ -49377,21 +49421,21 @@ Attributes = (function() {
         }
       }
       return results;
-    }).call(this);
+    }.call(this);
   };
 
-  Attributes.prototype.queue = function(callback, object, key, value) {
+  Attributes.prototype.queue = function (callback, object, key, value) {
     this.lastObject = object;
     this.lastKey = key;
     this.lastValue = value;
     return this.pending.push(callback);
   };
 
-  Attributes.prototype.invoke = function(callback) {
+  Attributes.prototype.invoke = function (callback) {
     return callback(this.context.time.clock, this.context.time.step);
   };
 
-  Attributes.prototype.compute = function() {
+  Attributes.prototype.compute = function () {
     var cb, j, len, ref;
     if (this.bound.length) {
       ref = this.bound;
@@ -49402,7 +49446,7 @@ Attributes = (function() {
     }
   };
 
-  Attributes.prototype.digest = function() {
+  Attributes.prototype.digest = function () {
     var callback, calls, j, len, ref;
     if (!this.pending.length) {
       return false;
@@ -49415,19 +49459,18 @@ Attributes = (function() {
     return true;
   };
 
-  Attributes.prototype.getTrait = function(name) {
+  Attributes.prototype.getTrait = function (name) {
     return this.traits[name];
   };
 
-  Attributes.prototype.getLastTrigger = function() {
-    return (this.lastObject.toString()) + " - " + this.lastKey + "=`" + this.lastValue + "`";
+  Attributes.prototype.getLastTrigger = function () {
+    return this.lastObject.toString() + " - " + this.lastKey + "=`" + this.lastValue + "`";
   };
 
   return Attributes;
+}();
 
-})();
-
-shallowCopy = function(x) {
+shallowCopy = function shallowCopy(x) {
   var k, out, v;
   out = {};
   for (k in x) {
@@ -49437,12 +49480,12 @@ shallowCopy = function(x) {
   return out;
 };
 
-Data = (function() {
+Data = function () {
   function Data(object, config, _attributes) {
     var _bound, _computed, _eval, _expr, _finals, addSpec, bind, change, changed, changes, constant, data, define, digest, dirty, equalors, equals, evaluate, event, expr, finals, flattened, freeform, get, getNS, j, key, len, list, makers, mapTo, name, ns, oldComputed, oldExpr, oldOrig, oldProps, originals, props, ref, ref1, set, shorthand, spec, to, touched, touches, trait, traits, unbind, unique, validate, validators, value, values;
     traits = config.traits, props = config.props, finals = config.finals, freeform = config.freeform;
     data = this;
-    if ((object.props != null) && (object.expr != null) && (object.orig != null) && (object.computed != null) && (object.attributes != null)) {
+    if (object.props != null && object.expr != null && object.orig != null && object.computed != null && object.attributes != null) {
       oldProps = shallowCopy(object.props);
       oldExpr = shallowCopy(object.expr);
       oldOrig = object.orig();
@@ -49454,26 +49497,26 @@ Data = (function() {
     flattened = {};
     originals = {};
     mapTo = {};
-    to = function(name) {
+    to = function to(name) {
       var ref1;
       return (ref1 = mapTo[name]) != null ? ref1 : name;
     };
-    define = function(name, alias) {
+    define = function define(name, alias) {
       if (mapTo[alias]) {
-        throw new Error((object.toString()) + " - Duplicate property `" + alias + "`");
+        throw new Error(object.toString() + " - Duplicate property `" + alias + "`");
       }
       return mapTo[alias] = name;
     };
-    get = function(key) {
+    get = function get(key) {
       var ref1, ref2, ref3;
       return (ref1 = (ref2 = data[key]) != null ? ref2.value : void 0) != null ? ref1 : (ref3 = data[to(key)]) != null ? ref3.value : void 0;
     };
-    set = function(key, value, ignore, initial) {
+    set = function set(key, value, ignore, initial) {
       var attr, ref1, short, valid, validated;
       key = to(key);
       if ((attr = data[key]) == null) {
         if (!freeform) {
-          throw new Error((object.toString()) + " - Setting unknown property `" + key + "={" + value + "}`");
+          throw new Error(object.toString() + " - Setting unknown property `" + key + "={" + value + "}`");
         }
         attr = data[key] = {
           short: key,
@@ -49481,23 +49524,23 @@ Data = (function() {
           last: null,
           value: null
         };
-        validators[key] = function(v) {
+        validators[key] = function (v) {
           return v;
         };
       }
       if (!ignore) {
         if (_expr[key]) {
-          throw new Error((object.toString()) + " - Can't set bound property `" + key + "={" + value + "}`");
+          throw new Error(object.toString() + " - Can't set bound property `" + key + "={" + value + "}`");
         }
         if (_computed[key]) {
-          throw new Error((object.toString()) + " - Can't set computed property `" + key + "={" + value + "}`");
+          throw new Error(object.toString() + " - Can't set computed property `" + key + "={" + value + "}`");
         }
         if (_finals[key]) {
-          throw new Error((object.toString()) + " - Can't set final property `" + key + "={" + value + "}`");
+          throw new Error(object.toString() + " - Can't set final property `" + key + "={" + value + "}`");
         }
       }
       valid = true;
-      validated = validate(key, value, attr.last, function() {
+      validated = validate(key, value, attr.last, function () {
         valid = false;
         return null;
       });
@@ -49514,7 +49557,7 @@ Data = (function() {
       }
       return valid;
     };
-    constant = function(key, value, initial) {
+    constant = function constant(key, value, initial) {
       key = to(key);
       set(key, value, true, initial);
       return _finals[key] = true;
@@ -49525,23 +49568,23 @@ Data = (function() {
     _expr = {};
     _computed = {};
     _finals = {};
-    bind = function(key, expression, computed) {
+    bind = function bind(key, expression, computed) {
       var list, short;
       if (computed == null) {
         computed = false;
       }
       key = to(key);
       if (typeof expression !== 'function') {
-        throw new Error((object.toString()) + " - Expression `" + key + "=>{" + expr + "}` is not a function");
+        throw new Error(object.toString() + " - Expression `" + key + "=>{" + expr + "}` is not a function");
       }
       if (_expr[key]) {
-        throw new Error((object.toString()) + " - Property `" + key + "=>{" + expr + "}` is already bound");
+        throw new Error(object.toString() + " - Property `" + key + "=>{" + expr + "}` is already bound");
       }
       if (_computed[key]) {
-        throw new Error((object.toString()) + " - Property `" + key + "` is computed");
+        throw new Error(object.toString() + " - Property `" + key + "` is computed");
       }
       if (_finals[key]) {
-        throw new Error((object.toString()) + " - Property `" + key + "` is final");
+        throw new Error(object.toString() + " - Property `" + key + "` is final");
       }
       list = computed ? _computed : _expr;
       list[key] = expression;
@@ -49551,7 +49594,7 @@ Data = (function() {
       }
       _eval[key] = expression;
       expression = expression.bind(object);
-      _bound[key] = function(t, d) {
+      _bound[key] = function (t, d) {
         var clock, ref1;
         if (clock = (ref1 = object.clock) != null ? ref1.getTime() : void 0) {
           t = clock.clock;
@@ -49561,7 +49604,7 @@ Data = (function() {
       };
       return _attributes.bind(_bound[key]);
     };
-    unbind = function(key, computed) {
+    unbind = function unbind(key, computed) {
       var list;
       if (computed == null) {
         computed = false;
@@ -49579,14 +49622,14 @@ Data = (function() {
       }
       return delete expr[key];
     };
-    evaluate = function(key, time) {
+    evaluate = function evaluate(key, time) {
       var ref1;
       key = to(key);
       return (ref1 = typeof _eval[key] === "function" ? _eval[key](time, 0) : void 0) != null ? ref1 : data[key].value;
     };
     object.expr = expr;
     object.props = flattened;
-    object.evaluate = function(key, time) {
+    object.evaluate = function (key, time) {
       var out;
       if (key != null) {
         return evaluate(key, time);
@@ -49598,14 +49641,14 @@ Data = (function() {
         return out;
       }
     };
-    object.get = function(key) {
+    object.get = function (key) {
       if (key != null) {
         return get(key);
       } else {
         return flattened;
       }
     };
-    object.set = function(key, value, ignore, initial) {
+    object.set = function (key, value, ignore, initial) {
       var options;
       if (typeof key === 'string') {
         set(key, value, ignore, initial);
@@ -49619,7 +49662,7 @@ Data = (function() {
         }
       }
     };
-    object.bind = function(key, expr, computed) {
+    object.bind = function (key, expr, computed) {
       var binds;
       if (typeof key === 'string') {
         bind(key, expr, computed);
@@ -49632,7 +49675,7 @@ Data = (function() {
         }
       }
     };
-    object.unbind = function(key, computed) {
+    object.unbind = function (key, computed) {
       var binds;
       if (typeof key === 'string') {
         unbind(key, computed);
@@ -49644,21 +49687,21 @@ Data = (function() {
         }
       }
     };
-    object.attribute = function(key) {
+    object.attribute = function (key) {
       if (key != null) {
         return data[to(key)];
       } else {
         return data;
       }
     };
-    object.orig = function(key) {
+    object.orig = function (key) {
       if (key != null) {
         return originals[to(key)];
       } else {
         return shallowCopy(originals);
       }
     };
-    object.computed = function(key) {
+    object.computed = function (key) {
       if (key != null) {
         return _computed[to(key)];
       } else {
@@ -49668,21 +49711,21 @@ Data = (function() {
     makers = {};
     validators = {};
     equalors = {};
-    equals = function(key, value, target) {
+    equals = function equals(key, value, target) {
       return equalors[key](value, target);
     };
-    validate = function(key, value, target, invalid) {
+    validate = function validate(key, value, target, invalid) {
       return validators[key](value, target, invalid);
     };
-    object.validate = function(key, value) {
+    object.validate = function (key, value) {
       var make, target;
       key = to(key);
       make = makers[key];
       if (make != null) {
         target = make();
       }
-      return target = validate(key, value, target, function() {
-        throw new Error((object.toString()) + " - Invalid value `" + key + "={" + value + "}`");
+      return target = validate(key, value, target, function () {
+        throw new Error(object.toString() + " - Invalid value `" + key + "={" + value + "}`");
       });
     };
     dirty = false;
@@ -49690,10 +49733,10 @@ Data = (function() {
     touches = {};
     changed = {};
     touched = {};
-    getNS = function(key) {
+    getNS = function getNS(key) {
       return key.split('.')[0];
     };
-    change = function(key, value) {
+    change = function change(key, value) {
       var trait;
       if (!dirty) {
         dirty = true;
@@ -49708,7 +49751,7 @@ Data = (function() {
       changed: null,
       touched: null
     };
-    digest = function() {
+    digest = function digest() {
       var k, results, trait;
       event.changed = changes;
       event.touched = touches;
@@ -49732,17 +49775,17 @@ Data = (function() {
       }
       return results;
     };
-    shorthand = function(name) {
+    shorthand = function shorthand(name) {
       var parts, suffix;
       parts = name.split(/\./g);
       suffix = parts.pop();
       parts.pop();
       parts.unshift(suffix);
-      return parts.reduce(function(a, b) {
+      return parts.reduce(function (a, b) {
         return a + b.charAt(0).toUpperCase() + b.substring(1);
       });
     };
-    addSpec = function(name, spec) {
+    addSpec = function addSpec(name, spec) {
       var attr, key, ref1, ref2, results, short, type, value;
       results = [];
       for (key in spec) {
@@ -49761,10 +49804,10 @@ Data = (function() {
         define(key, short);
         flattened[short] = value;
         makers[key] = type.make;
-        validators[key] = (ref1 = type.validate) != null ? ref1 : function(a) {
+        validators[key] = (ref1 = type.validate) != null ? ref1 : function (a) {
           return a;
         };
-        results.push(equalors[key] = (ref2 = type.equals) != null ? ref2 : function(a, b) {
+        results.push(equalors[key] = (ref2 = type.equals) != null ? ref2 : function (a, b) {
           return a === b;
         });
       }
@@ -49788,7 +49831,7 @@ Data = (function() {
         addSpec(ns, spec);
       }
     }
-    unique = list.filter(function(object, i) {
+    unique = list.filter(function (object, i) {
       return list.indexOf(object) === i;
     });
     object.traits = unique;
@@ -49810,7 +49853,7 @@ Data = (function() {
     if (oldExpr != null) {
       object.bind(oldExpr, false);
     }
-    this.dispose = function() {
+    this.dispose = function () {
       for (key in _computed) {
         unbind(key, true);
       }
@@ -49826,26 +49869,34 @@ Data = (function() {
   }
 
   return Data;
-
-})();
+}();
 
 module.exports = Attributes;
 
 },{}],15:[function(require,module,exports){
-var Group, Node,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Group,
+    Node,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Node = require('./node');
 
-Group = (function(superClass) {
+Group = function (superClass) {
   extend(Group, superClass);
 
   function Group(type, defaults, options, binds, config, attributes) {
     Group.__super__.constructor.call(this, type, defaults, options, binds, config, attributes);
     this.children = [];
-    this.on('reindex', (function(_this) {
-      return function(event) {
+    this.on('reindex', function (_this) {
+      return function (event) {
         var child, j, len, ref, results;
         ref = _this.children;
         results = [];
@@ -49855,10 +49906,10 @@ Group = (function(superClass) {
         }
         return results;
       };
-    })(this));
+    }(this));
   }
 
-  Group.prototype.add = function(node) {
+  Group.prototype.add = function (node) {
     var ref;
     if ((ref = node.parent) != null) {
       ref.remove(node);
@@ -49868,7 +49919,7 @@ Group = (function(superClass) {
     return node._added(this);
   };
 
-  Group.prototype.remove = function(node) {
+  Group.prototype.remove = function (node) {
     var i, index, j, len, ref, ref1;
     if ((ref = node.children) != null ? ref.length : void 0) {
       node.empty();
@@ -49889,7 +49940,7 @@ Group = (function(superClass) {
     }
   };
 
-  Group.prototype.empty = function() {
+  Group.prototype.empty = function () {
     var children, j, len, node;
     children = this.children.slice().reverse();
     for (j = 0, len = children.length; j < len; j++) {
@@ -49899,25 +49950,26 @@ Group = (function(superClass) {
   };
 
   return Group;
-
-})(Node);
+}(Node);
 
 module.exports = Group;
 
 },{"./node":19}],16:[function(require,module,exports){
+"use strict";
+
 var Guard;
 
-Guard = (function() {
+Guard = function () {
   function Guard(limit1) {
     this.limit = limit1 != null ? limit1 : 10;
   }
 
-  Guard.prototype.iterate = function(options) {
+  Guard.prototype.iterate = function (options) {
     var last, limit, run, step;
     step = options.step, last = options.last;
     limit = this.limit;
     while (run = step()) {
-      if (!--limit) {
+      if (! --limit) {
         console.warn("Last iteration", typeof last === "function" ? last() : void 0);
         throw new Error("Exceeded iteration limit.");
       }
@@ -49926,12 +49978,13 @@ Guard = (function() {
   };
 
   return Guard;
-
-})();
+}();
 
 module.exports = Guard;
 
 },{}],17:[function(require,module,exports){
+'use strict';
+
 exports.Attributes = require('./attributes');
 exports.Group = require('./group');
 exports.Guard = require('./guard');
@@ -49939,8 +49992,22 @@ exports.Model = require('./model');
 exports.Node = require('./node');
 
 },{"./attributes":14,"./group":15,"./guard":16,"./model":18,"./node":19}],18:[function(require,module,exports){
-var ALL, AUTO, CLASS, ID, Model, TRAIT, TYPE, cssauron, language,
-  indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+'use strict';
+
+var ALL,
+    AUTO,
+    CLASS,
+    ID,
+    Model,
+    TRAIT,
+    TYPE,
+    cssauron,
+    language,
+    indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
 
 cssauron = require('cssauron');
 
@@ -49958,7 +50025,6 @@ AUTO = /^<([0-9]+|<*)$/;
 
 language = null;
 
-
 /*
 
   Model that wraps a root node and its children.
@@ -49970,7 +50036,7 @@ language = null;
   and fired with digest().
  */
 
-Model = (function() {
+Model = function () {
   function Model(root) {
     var add, addClasses, addID, addNode, addTags, addTraits, addType, adopt, check, dispose, force, hashTags, prime, remove, removeClasses, removeID, removeNode, removeTags, removeTraits, removeType, unhashTags, update;
     this.root = root;
@@ -49997,20 +50063,20 @@ Model = (function() {
         attr: 'traits.hash[attr]'
       });
     }
-    add = (function(_this) {
-      return function(event) {
+    add = function (_this) {
+      return function (event) {
         return adopt(event.node);
       };
-    })(this);
-    remove = (function(_this) {
-      return function(event) {
+    }(this);
+    remove = function (_this) {
+      return function (event) {
         return dispose(event.node);
       };
-    })(this);
+    }(this);
     this.root.on('add', add);
     this.root.on('remove', remove);
-    adopt = (function(_this) {
-      return function(node) {
+    adopt = function (_this) {
+      return function (node) {
         addNode(node);
         addType(node);
         addTraits(node);
@@ -50018,9 +50084,9 @@ Model = (function() {
         update(null, node, true);
         return force(node);
       };
-    })(this);
-    dispose = (function(_this) {
-      return function(node) {
+    }(this);
+    dispose = function (_this) {
+      return function (node) {
         removeNode(node);
         removeType(node);
         removeTraits(node);
@@ -50029,9 +50095,9 @@ Model = (function() {
         node.off('change:node', update);
         return force(node);
       };
-    })(this);
-    prime = (function(_this) {
-      return function(node) {
+    }(this);
+    prime = function (_this) {
+      return function (node) {
         var i, len, ref, watcher;
         ref = _this.watchers;
         for (i = 0, len = ref.length; i < len; i++) {
@@ -50040,9 +50106,9 @@ Model = (function() {
         }
         return null;
       };
-    })(this);
-    check = (function(_this) {
-      return function(node) {
+    }(this);
+    check = function (_this) {
+      return function (node) {
         var fire, i, len, ref, watcher;
         ref = _this.watchers;
         for (i = 0, len = ref.length; i < len; i++) {
@@ -50055,9 +50121,9 @@ Model = (function() {
         }
         return null;
       };
-    })(this);
-    force = (function(_this) {
-      return function(node) {
+    }(this);
+    force = function (_this) {
+      return function (node) {
         var fire, i, len, ref, watcher;
         ref = _this.watchers;
         for (i = 0, len = ref.length; i < len; i++) {
@@ -50070,9 +50136,9 @@ Model = (function() {
         }
         return null;
       };
-    })(this);
-    this.digest = (function(_this) {
-      return function() {
+    }(this);
+    this.digest = function (_this) {
+      return function () {
         var i, len, ref, watcher;
         if (!_this.fire) {
           return false;
@@ -50089,9 +50155,9 @@ Model = (function() {
         _this.fire = false;
         return true;
       };
-    })(this);
-    update = (function(_this) {
-      return function(event, node, init) {
+    }(this);
+    update = function (_this) {
+      return function (event, node, init) {
         var _id, _klass, classes, id, klass, primed, ref, ref1;
         _id = init || event.changed['node.id'];
         _klass = init || event.changed['node.classes'];
@@ -50131,8 +50197,8 @@ Model = (function() {
         }
         return null;
       };
-    })(this);
-    addTags = function(sets, tags, node) {
+    }(this);
+    addTags = function addTags(sets, tags, node) {
       var i, k, len, list, ref;
       if (tags == null) {
         return;
@@ -50145,7 +50211,7 @@ Model = (function() {
       }
       return null;
     };
-    removeTags = function(sets, tags, node) {
+    removeTags = function removeTags(sets, tags, node) {
       var i, index, k, len, list;
       if (tags == null) {
         return;
@@ -50163,7 +50229,7 @@ Model = (function() {
       }
       return null;
     };
-    hashTags = function(array) {
+    hashTags = function hashTags(array) {
       var hash, i, klass, len, results;
       if (!(array.length > 0)) {
         return;
@@ -50176,11 +50242,11 @@ Model = (function() {
       }
       return results;
     };
-    unhashTags = function(array) {
+    unhashTags = function unhashTags(array) {
       return delete array.hash;
     };
-    addID = (function(_this) {
-      return function(id, node) {
+    addID = function (_this) {
+      return function (id, node) {
         if (_this.ids[id]) {
           throw new Error("Duplicate node id `" + id + "`");
         }
@@ -50189,70 +50255,70 @@ Model = (function() {
         }
         return node.id = id != null ? id : node._id;
       };
-    })(this);
-    removeID = (function(_this) {
-      return function(id, node) {
+    }(this);
+    removeID = function (_this) {
+      return function (id, node) {
         if (id != null) {
           delete _this.ids[id];
         }
         return node.id = node._id;
       };
-    })(this);
-    addClasses = (function(_this) {
-      return function(classes, node) {
+    }(this);
+    addClasses = function (_this) {
+      return function (classes, node) {
         addTags(_this.classes, classes, node);
         if (classes != null) {
           return hashTags(classes);
         }
       };
-    })(this);
-    removeClasses = (function(_this) {
-      return function(classes, node) {
+    }(this);
+    removeClasses = function (_this) {
+      return function (classes, node) {
         removeTags(_this.classes, classes, node);
         if (classes != null) {
           return unhashTags(classes);
         }
       };
-    })(this);
-    addNode = (function(_this) {
-      return function(node) {
+    }(this);
+    addNode = function (_this) {
+      return function (node) {
         return _this.nodes.push(node);
       };
-    })(this);
-    removeNode = (function(_this) {
-      return function(node) {
+    }(this);
+    removeNode = function (_this) {
+      return function (node) {
         return _this.nodes.splice(_this.nodes.indexOf(node), 1);
       };
-    })(this);
-    addType = (function(_this) {
-      return function(node) {
+    }(this);
+    addType = function (_this) {
+      return function (node) {
         return addTags(_this.types, [node.type], node);
       };
-    })(this);
-    removeType = (function(_this) {
-      return function(node) {
+    }(this);
+    removeType = function (_this) {
+      return function (node) {
         return removeTags(_this.types, [node.type], node);
       };
-    })(this);
-    addTraits = (function(_this) {
-      return function(node) {
+    }(this);
+    addTraits = function (_this) {
+      return function (node) {
         addTags(_this.traits, node.traits, node);
         return hashTags(node.traits);
       };
-    })(this);
-    removeTraits = (function(_this) {
-      return function(node) {
+    }(this);
+    removeTraits = function (_this) {
+      return function (node) {
         removeTags(_this.traits, node.traits, node);
         return unhashTags(node.traits);
       };
-    })(this);
+    }(this);
     adopt(this.root);
     this.root.trigger({
       type: 'added'
     });
   }
 
-  Model.prototype.filter = function(nodes, selector) {
+  Model.prototype.filter = function (nodes, selector) {
     var i, len, matcher, node, results;
     matcher = this._matcher(selector);
     results = [];
@@ -50265,7 +50331,7 @@ Model = (function() {
     return results;
   };
 
-  Model.prototype.ancestry = function(nodes, parents) {
+  Model.prototype.ancestry = function (nodes, parents) {
     var i, len, node, out, parent;
     out = [];
     for (i = 0, len = nodes.length; i < len; i++) {
@@ -50282,25 +50348,25 @@ Model = (function() {
     return out;
   };
 
-  Model.prototype.select = function(selector, parents) {
+  Model.prototype.select = function (selector, parents) {
     var matches;
     matches = this._select(selector);
     if (parents != null) {
       matches = this.ancestry(matches, parents);
     }
-    matches.sort(function(a, b) {
+    matches.sort(function (a, b) {
       return b.order - a.order;
     });
     return matches;
   };
 
-  Model.prototype.watch = function(selector, handler) {
+  Model.prototype.watch = function (selector, handler) {
     var watcher;
-    handler.unwatch = (function(_this) {
-      return function() {
+    handler.unwatch = function (_this) {
+      return function () {
         return _this.unwatch(handler);
       };
-    })(this);
+    }(this);
     handler.watcher = watcher = {
       selector: selector,
       handler: handler,
@@ -50312,7 +50378,7 @@ Model = (function() {
     return this.select(selector);
   };
 
-  Model.prototype.unwatch = function(handler) {
+  Model.prototype.unwatch = function (handler) {
     var watcher;
     watcher = handler.watcher;
     if (watcher == null) {
@@ -50323,7 +50389,7 @@ Model = (function() {
     return delete handler.watcher;
   };
 
-  Model.prototype._simplify = function(s) {
+  Model.prototype._simplify = function (s) {
     var all, auto, found, id, klass, ref, ref1, ref2, ref3, ref4, trait, type;
     s = s.replace(/^\s+/, '');
     s = s.replace(/\s+$/, '');
@@ -50346,35 +50412,35 @@ Model = (function() {
     return [all, id, klass, trait, type, auto];
   };
 
-  Model.prototype._matcher = function(s) {
+  Model.prototype._matcher = function (s) {
     var all, auto, id, klass, ref, trait, type;
     ref = this._simplify(s), all = ref[0], id = ref[1], klass = ref[2], trait = ref[3], type = ref[4], auto = ref[5];
     if (all) {
-      return (function(node) {
+      return function (node) {
         return true;
-      });
+      };
     }
     if (id) {
-      return (function(node) {
+      return function (node) {
         return node.id === id;
-      });
+      };
     }
     if (klass) {
-      return (function(node) {
+      return function (node) {
         var ref1, ref2;
         return (ref1 = node.classes) != null ? (ref2 = ref1.hash) != null ? ref2[klass] : void 0 : void 0;
-      });
+      };
     }
     if (trait) {
-      return (function(node) {
+      return function (node) {
         var ref1, ref2;
         return (ref1 = node.traits) != null ? (ref2 = ref1.hash) != null ? ref2[trait] : void 0 : void 0;
-      });
+      };
     }
     if (type) {
-      return (function(node) {
+      return function (node) {
         return node.type === type;
-      });
+      };
     }
     if (auto) {
       throw "Auto-link matcher unsupported";
@@ -50382,7 +50448,7 @@ Model = (function() {
     return language(s);
   };
 
-  Model.prototype._select = function(s) {
+  Model.prototype._select = function (s) {
     var all, id, klass, ref, ref1, ref2, ref3, ref4, trait, type;
     ref = this._simplify(s), all = ref[0], id = ref[1], klass = ref[2], trait = ref[3], type = ref[4];
     if (all) {
@@ -50403,28 +50469,29 @@ Model = (function() {
     return this.filter(this.nodes, s);
   };
 
-  Model.prototype.getRoot = function() {
+  Model.prototype.getRoot = function () {
     return this.root;
   };
 
-  Model.prototype.getLastTrigger = function() {
+  Model.prototype.getLastTrigger = function () {
     return this.lastNode.toString();
   };
 
   return Model;
-
-})();
+}();
 
 module.exports = Model;
 
 },{"cssauron":165}],19:[function(require,module,exports){
+'use strict';
+
 var Binder, Node, Util, nodeIndex;
 
 Util = require('../util');
 
 nodeIndex = 0;
 
-Node = (function() {
+Node = function () {
   function Node(type, defaults, options, binds, config, attributes) {
     this.type = type;
     this._id = (++nodeIndex).toString();
@@ -50435,7 +50502,7 @@ Node = (function() {
     this.bind(binds, false);
   }
 
-  Node.prototype.configure = function(config, attributes) {
+  Node.prototype.configure = function (config, attributes) {
     var finals, freeform, props, ref, ref1, ref2, ref3, ref4, ref5, ref6, ref7, traits;
     traits = config.traits, props = config.props, finals = config.finals, freeform = config.freeform;
     if (traits == null) {
@@ -50459,12 +50526,12 @@ Node = (function() {
     return this.attributes = attributes.apply(this, this._config);
   };
 
-  Node.prototype.dispose = function() {
+  Node.prototype.dispose = function () {
     this.attributes.dispose();
     return this.attributes = null;
   };
 
-  Node.prototype._added = function(parent) {
+  Node.prototype._added = function (parent) {
     var event;
     this.parent = parent;
     this.root = parent.root;
@@ -50480,7 +50547,7 @@ Node = (function() {
     return this.trigger(event);
   };
 
-  Node.prototype._removed = function() {
+  Node.prototype._removed = function () {
     var event;
     event = {
       type: 'remove',
@@ -50494,7 +50561,7 @@ Node = (function() {
     return this.root = this.parent = null;
   };
 
-  Node.prototype._index = function(index, parent) {
+  Node.prototype._index = function (index, parent) {
     var path, ref;
     if (parent == null) {
       parent = this.parent;
@@ -50509,13 +50576,13 @@ Node = (function() {
     }
   };
 
-  Node.prototype._encode = function(path) {
+  Node.prototype._encode = function (path) {
     var a, b, f, g, i, index, k, len, lerp, map, ref;
     k = 3;
-    map = function(x) {
+    map = function map(x) {
       return k / (x + k);
     };
-    lerp = function(t) {
+    lerp = function lerp(t) {
       return b + (a - b) * t;
     };
     a = 1 + 1 / k;
@@ -50529,14 +50596,14 @@ Node = (function() {
     return a;
   };
 
-  Node.prototype.toString = function() {
+  Node.prototype.toString = function () {
     var _id, count, id, ref, ref1, ref2, tag;
     _id = (ref = this.id) != null ? ref : this._id;
     tag = (ref1 = this.type) != null ? ref1 : 'node';
     id = tag;
     id += "#" + _id;
     if ((ref2 = this.classes) != null ? ref2.length : void 0) {
-      id += "." + (this.classes.join('.'));
+      id += "." + this.classes.join('.');
     }
     if (this.children != null) {
       if (count = this.children.length) {
@@ -50549,7 +50616,7 @@ Node = (function() {
     }
   };
 
-  Node.prototype.toMarkup = function(selector, indent) {
+  Node.prototype.toMarkup = function (selector, indent) {
     var attr, child, children, close, expr, k, open, orig, props, recurse, ref, ref1, ref2, ref3, tag, v;
     if (selector == null) {
       selector = null;
@@ -50558,7 +50625,7 @@ Node = (function() {
       indent = '';
     }
     if (selector && typeof selector !== 'function') {
-      selector = (ref = (ref1 = this.root) != null ? ref1.model._matcher(selector) : void 0) != null ? ref : function() {
+      selector = (ref = (ref1 = this.root) != null ? ref1.model._matcher(selector) : void 0) != null ? ref : function () {
         return true;
       };
     }
@@ -50572,7 +50639,7 @@ Node = (function() {
       v = ref3[k];
       orig[k] = v;
     }
-    props = (function() {
+    props = function () {
       var results;
       results = [];
       for (k in orig) {
@@ -50582,8 +50649,8 @@ Node = (function() {
         }
       }
       return results;
-    }).call(this);
-    expr = (function() {
+    }.call(this);
+    expr = function () {
       var results;
       results = [];
       for (k in expr) {
@@ -50591,7 +50658,7 @@ Node = (function() {
         results.push(Util.Pretty.JSX.bind(k, v));
       }
       return results;
-    })();
+    }();
     attr = [''];
     if (props.length) {
       attr = attr.concat(props);
@@ -50601,19 +50668,19 @@ Node = (function() {
     }
     attr = attr.join(' ');
     child = indent;
-    recurse = (function(_this) {
-      return function() {
+    recurse = function (_this) {
+      return function () {
         var children, ref4;
         if (!((ref4 = _this.children) != null ? ref4.length : void 0)) {
           return '';
         }
-        return children = _this.children.map(function(x) {
+        return children = _this.children.map(function (x) {
           return x.toMarkup(selector, child);
-        }).filter(function(x) {
-          return (x != null) && x.length;
+        }).filter(function (x) {
+          return x != null && x.length;
         }).join("\n");
       };
-    })(this);
+    }(this);
     if (selector && !selector(this)) {
       return recurse();
     }
@@ -50634,13 +50701,12 @@ Node = (function() {
     }
   };
 
-  Node.prototype.print = function(selector, level) {
+  Node.prototype.print = function (selector, level) {
     return Util.Pretty.print(this.toMarkup(selector), level);
   };
 
   return Node;
-
-})();
+}();
 
 Binder = require('../util/binder');
 
@@ -50649,6 +50715,8 @@ Binder.apply(Node.prototype);
 module.exports = Node;
 
 },{"../util":158,"../util/binder":154}],20:[function(require,module,exports){
+'use strict';
+
 var Classes;
 
 Classes = {
@@ -50658,15 +50726,27 @@ Classes = {
 module.exports = Classes;
 
 },{"./dom":21}],21:[function(require,module,exports){
-var DOM, Overlay, VDOM,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+var DOM,
+    Overlay,
+    VDOM,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Overlay = require('./overlay');
 
 VDOM = require('../util').VDOM;
 
-DOM = (function(superClass) {
+DOM = function (superClass) {
   extend(DOM, superClass);
 
   function DOM() {
@@ -50681,16 +50761,16 @@ DOM = (function(superClass) {
 
   DOM.prototype.recycle = VDOM.recycle;
 
-  DOM.prototype.init = function(options) {
+  DOM.prototype.init = function (options) {
     return this.last = null;
   };
 
-  DOM.prototype.dispose = function() {
+  DOM.prototype.dispose = function () {
     this.unmount();
     return DOM.__super__.dispose.apply(this, arguments);
   };
 
-  DOM.prototype.mount = function() {
+  DOM.prototype.mount = function () {
     var overlay;
     overlay = document.createElement('div');
     overlay.classList.add('mathbox-overlay');
@@ -50698,19 +50778,19 @@ DOM = (function(superClass) {
     return this.overlay = overlay;
   };
 
-  DOM.prototype.unmount = function(overlay) {
+  DOM.prototype.unmount = function (overlay) {
     if (this.overlay.parentNode) {
       this.element.removeChild(this.overlay);
     }
     return this.overlay = null;
   };
 
-  DOM.prototype.render = function(el) {
+  DOM.prototype.render = function (el) {
     var last, naked, node, overlay, parent, ref;
     if (!this.overlay) {
       this.mount();
     }
-    if ((ref = typeof el) === 'string' || ref === 'number') {
+    if ((ref = typeof el === 'undefined' ? 'undefined' : _typeof(el)) === 'string' || ref === 'number') {
       el = this.el('div', null, el);
     }
     if (el instanceof Array) {
@@ -50732,15 +50812,16 @@ DOM = (function(superClass) {
   };
 
   return DOM;
-
-})(Overlay);
+}(Overlay);
 
 module.exports = DOM;
 
 },{"../util":158,"./overlay":24}],22:[function(require,module,exports){
+'use strict';
+
 var OverlayFactory;
 
-OverlayFactory = (function() {
+OverlayFactory = function () {
   function OverlayFactory(classes, canvas) {
     var div;
     this.classes = classes;
@@ -50750,7 +50831,7 @@ OverlayFactory = (function() {
     this.div = div;
   }
 
-  OverlayFactory.prototype.inject = function() {
+  OverlayFactory.prototype.inject = function () {
     var element;
     element = this.canvas.parentNode;
     if (!element) {
@@ -50759,35 +50840,38 @@ OverlayFactory = (function() {
     return element.insertBefore(this.div, this.canvas);
   };
 
-  OverlayFactory.prototype.unject = function() {
+  OverlayFactory.prototype.unject = function () {
     var element;
     element = this.div.parentNode;
     return element.removeChild(this.div);
   };
 
-  OverlayFactory.prototype.getTypes = function() {
+  OverlayFactory.prototype.getTypes = function () {
     return Object.keys(this.classes);
   };
 
-  OverlayFactory.prototype.make = function(type, options) {
+  OverlayFactory.prototype.make = function (type, options) {
     return new this.classes[type](this.div, options);
   };
 
   return OverlayFactory;
-
-})();
+}();
 
 module.exports = OverlayFactory;
 
 },{}],23:[function(require,module,exports){
+'use strict';
+
 exports.Factory = require('./factory');
 exports.Classes = require('./classes');
 exports.Overlay = require('./overlay');
 
 },{"./classes":20,"./factory":22,"./overlay":24}],24:[function(require,module,exports){
+"use strict";
+
 var Overlay;
 
-Overlay = (function() {
+Overlay = function () {
   function Overlay(element, options) {
     this.element = element;
     if (typeof this.init === "function") {
@@ -50795,31 +50879,32 @@ Overlay = (function() {
     }
   }
 
-  Overlay.prototype.dispose = function() {};
+  Overlay.prototype.dispose = function () {};
 
   return Overlay;
-
-})();
+}();
 
 module.exports = Overlay;
 
 },{}],25:[function(require,module,exports){
+"use strict";
+
 var PrimitiveFactory, Util;
 
 Util = require('../util');
 
-PrimitiveFactory = (function() {
+PrimitiveFactory = function () {
   function PrimitiveFactory(definitions, context) {
     this.context = context;
     this.classes = definitions.Classes;
     this.helpers = definitions.Helpers;
   }
 
-  PrimitiveFactory.prototype.getTypes = function() {
+  PrimitiveFactory.prototype.getTypes = function () {
     return Object.keys(this.classes);
   };
 
-  PrimitiveFactory.prototype.make = function(type, options, binds) {
+  PrimitiveFactory.prototype.make = function (type, options, binds) {
     var klass, node, primitive;
     if (options == null) {
       options = {};
@@ -50837,23 +50922,34 @@ PrimitiveFactory = (function() {
   };
 
   return PrimitiveFactory;
-
-})();
+}();
 
 module.exports = PrimitiveFactory;
 
 },{"../util":158}],26:[function(require,module,exports){
+'use strict';
+
 exports.Factory = require('./factory');
 exports.Primitive = require('./primitive');
 exports.Types = require('./types');
 
 },{"./factory":25,"./primitive":27,"./types":55}],27:[function(require,module,exports){
-var Binder, Model, Primitive,
-  indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+'use strict';
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+var Binder,
+    Model,
+    Primitive,
+    indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
 
 Model = require('../model');
 
-Primitive = (function() {
+Primitive = function () {
   Primitive.Node = Model.Node;
 
   Primitive.Group = Model.Group;
@@ -50880,23 +50976,23 @@ Primitive = (function() {
     this._animator = this._context.animator;
     this._types = this._attributes.types;
     this.node.controller = this;
-    this.node.on('added', (function(_this) {
-      return function(event) {
+    this.node.on('added', function (_this) {
+      return function (event) {
         return _this._added();
       };
-    })(this));
-    this.node.on('removed', (function(_this) {
-      return function(event) {
+    }(this));
+    this.node.on('removed', function (_this) {
+      return function (event) {
         return _this._removed();
       };
-    })(this));
-    this.node.on('change', (function(_this) {
-      return function(event) {
+    }(this));
+    this.node.on('change', function (_this) {
+      return function (event) {
         if (_this._root) {
           return _this.change(event.changed, event.touched);
         }
       };
-    })(this));
+    }(this));
     this.reconfigure();
     this._get = this.node.get.bind(this.node);
     this._helpers = helpers(this, this.node.traits);
@@ -50910,34 +51006,34 @@ Primitive = (function() {
     this.init();
   }
 
-  Primitive.prototype.is = function(trait) {
+  Primitive.prototype.is = function (trait) {
     return this.traits.hash[trait];
   };
 
-  Primitive.prototype.init = function() {};
+  Primitive.prototype.init = function () {};
 
-  Primitive.prototype.make = function() {};
+  Primitive.prototype.make = function () {};
 
-  Primitive.prototype.made = function() {};
+  Primitive.prototype.made = function () {};
 
-  Primitive.prototype.unmake = function(rebuild) {};
+  Primitive.prototype.unmake = function (rebuild) {};
 
-  Primitive.prototype.unmade = function() {};
+  Primitive.prototype.unmade = function () {};
 
-  Primitive.prototype.change = function(changed, touched, init) {};
+  Primitive.prototype.change = function (changed, touched, init) {};
 
-  Primitive.prototype.refresh = function() {
+  Primitive.prototype.refresh = function () {
     return this.change({}, {}, true);
   };
 
-  Primitive.prototype.rebuild = function() {
+  Primitive.prototype.rebuild = function () {
     if (this._root) {
       this._removed(true);
       return this._added();
     }
   };
 
-  Primitive.prototype.reconfigure = function(config) {
+  Primitive.prototype.reconfigure = function (config) {
     if (config != null) {
       this.node.configure(config, this._attributes);
     }
@@ -50945,7 +51041,7 @@ Primitive = (function() {
     return this.props = this.node.props;
   };
 
-  Primitive.prototype._added = function() {
+  Primitive.prototype._added = function () {
     var e, ref, ref1, ref2;
     this._parent = (ref = this.node.parent) != null ? ref.controller : void 0;
     this._root = (ref1 = this.node.root) != null ? ref1.controller : void 0;
@@ -50969,7 +51065,7 @@ Primitive = (function() {
     }
   };
 
-  Primitive.prototype._removed = function(rebuild) {
+  Primitive.prototype._removed = function (rebuild) {
     if (rebuild == null) {
       rebuild = false;
     }
@@ -50982,7 +51078,7 @@ Primitive = (function() {
     return this.unmade(rebuild);
   };
 
-  Primitive.prototype._listen = function(object, type, method, self) {
+  Primitive.prototype._listen = function (object, type, method, self) {
     var i, len, o;
     if (self == null) {
       self = this;
@@ -50996,7 +51092,7 @@ Primitive = (function() {
     return this.__listen(object, type, method, self);
   };
 
-  Primitive.prototype.__listen = function(object, type, method, self) {
+  Primitive.prototype.__listen = function (object, type, method, self) {
     var handler;
     if (self == null) {
       self = this;
@@ -51013,7 +51109,7 @@ Primitive = (function() {
     return object;
   };
 
-  Primitive.prototype._unlisten = function() {
+  Primitive.prototype._unlisten = function () {
     var handler, i, len, object, ref, ref1, type;
     if (!this._handlers.listen.length) {
       return;
@@ -51026,7 +51122,7 @@ Primitive = (function() {
     return this._handlers.listen = [];
   };
 
-  Primitive.prototype._inherit = function(trait) {
+  Primitive.prototype._inherit = function (trait) {
     var cached, ref;
     cached = this._handlers.inherit[trait];
     if (cached !== void 0) {
@@ -51035,7 +51131,7 @@ Primitive = (function() {
     return this._handlers.inherit[trait] = (ref = this._parent) != null ? ref._find(trait != null ? trait : null) : void 0;
   };
 
-  Primitive.prototype._find = function(trait) {
+  Primitive.prototype._find = function (trait) {
     var ref;
     if (this.is(trait)) {
       return this;
@@ -51043,11 +51139,11 @@ Primitive = (function() {
     return (ref = this._parent) != null ? ref._find(trait) : void 0;
   };
 
-  Primitive.prototype._uninherit = function() {
+  Primitive.prototype._uninherit = function () {
     return this._handlers.inherit = {};
   };
 
-  Primitive.prototype._attach = function(selector, trait, method, self, start, optional, multiple) {
+  Primitive.prototype._attach = function (selector, trait, method, self, start, optional, multiple) {
     var filter, flatten, map, nodes, resolve;
     if (self == null) {
       self = this;
@@ -51061,15 +51157,15 @@ Primitive = (function() {
     if (multiple == null) {
       multiple = false;
     }
-    filter = function(node) {
-      if ((node != null) && indexOf.call(node.traits, trait) >= 0) {
+    filter = function filter(node) {
+      if (node != null && indexOf.call(node.traits, trait) >= 0) {
         return node;
       }
     };
-    map = function(node) {
+    map = function map(node) {
       return node != null ? node.controller : void 0;
     };
-    flatten = function(list) {
+    flatten = function flatten(list) {
       var i, len, out, sub;
       if (list == null) {
         return list;
@@ -51085,10 +51181,10 @@ Primitive = (function() {
       }
       return out;
     };
-    resolve = (function(_this) {
-      return function(selector) {
+    resolve = function (_this) {
+      return function (selector) {
         var discard, match, node, nodes, parent, previous, selection, watcher;
-        if (typeof selector === 'object') {
+        if ((typeof selector === 'undefined' ? 'undefined' : _typeof(selector)) === 'object') {
           node = selector;
           if (node != null ? node._up : void 0) {
             selector = multiple ? node._targets : [node[0]];
@@ -51124,7 +51220,7 @@ Primitive = (function() {
             if (filter(previous)) {
               node = previous;
             }
-            if ((node != null) && discard-- <= 0) {
+            if (node != null && discard-- <= 0) {
               nodes.push(node);
             }
             if (!multiple && nodes.length) {
@@ -51154,7 +51250,7 @@ Primitive = (function() {
         }
         if (!optional) {
           console.warn(_this.node.toMarkup());
-          throw new Error((_this.node.toString()) + " - Could not find " + trait + " `" + selector + "`");
+          throw new Error(_this.node.toString() + " - Could not find " + trait + " `" + selector + "`");
         }
         if (multiple) {
           return [];
@@ -51162,7 +51258,7 @@ Primitive = (function() {
           return null;
         }
       };
-    })(this);
+    }(this);
     nodes = flatten(resolve(selector));
     if (multiple) {
       if (nodes != null) {
@@ -51179,7 +51275,7 @@ Primitive = (function() {
     }
   };
 
-  Primitive.prototype._unattach = function() {
+  Primitive.prototype._unattach = function () {
     var i, len, ref, watcher;
     if (!this._handlers.watch.length) {
       return;
@@ -51194,12 +51290,12 @@ Primitive = (function() {
     return this._handlers.watch = [];
   };
 
-  Primitive.prototype._compute = function(key, expr) {
+  Primitive.prototype._compute = function (key, expr) {
     this._handlers.compute.push(key);
     return this.node.bind(key, expr, true);
   };
 
-  Primitive.prototype._uncompute = function() {
+  Primitive.prototype._uncompute = function () {
     var i, key, len, ref;
     if (!this._handlers.compute.length) {
       return;
@@ -51213,8 +51309,7 @@ Primitive = (function() {
   };
 
   return Primitive;
-
-})();
+}();
 
 Binder = require('../util/binder');
 
@@ -51223,13 +51318,22 @@ Binder.apply(Primitive.prototype);
 module.exports = Primitive;
 
 },{"../model":17,"../util/binder":154}],28:[function(require,module,exports){
-var Group, Parent,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Group,
+    Parent,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('./parent');
 
-Group = (function(superClass) {
+Group = function (superClass) {
   extend(Group, superClass);
 
   function Group() {
@@ -51238,31 +51342,43 @@ Group = (function(superClass) {
 
   Group.traits = ['node', 'object', 'entity', 'visible', 'active'];
 
-  Group.prototype.make = function() {
+  Group.prototype.make = function () {
     this._helpers.visible.make();
     return this._helpers.active.make();
   };
 
-  Group.prototype.unmake = function() {
+  Group.prototype.unmake = function () {
     this._helpers.visible.unmake();
     return this._helpers.active.unmake();
   };
 
   return Group;
-
-})(Parent);
+}(Parent);
 
 module.exports = Group;
 
 },{"./parent":30}],29:[function(require,module,exports){
-var Inherit, Parent,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty,
-  indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+'use strict';
+
+var Inherit,
+    Parent,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty,
+    indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
 
 Parent = require('./parent');
 
-Inherit = (function(superClass) {
+Inherit = function (superClass) {
   extend(Inherit, superClass);
 
   function Inherit() {
@@ -51271,40 +51387,46 @@ Inherit = (function(superClass) {
 
   Inherit.traits = ['node', 'bind'];
 
-  Inherit.prototype.make = function() {
-    return this._helpers.bind.make([
-      {
-        to: 'inherit.source',
-        trait: 'node'
-      }
-    ]);
+  Inherit.prototype.make = function () {
+    return this._helpers.bind.make([{
+      to: 'inherit.source',
+      trait: 'node'
+    }]);
   };
 
-  Inherit.prototype.unmake = function() {
+  Inherit.prototype.unmake = function () {
     return this._helpers.bind.unmake();
   };
 
-  Inherit.prototype._find = function(trait) {
-    if (this.bind.source && (indexOf.call(this.props.traits, trait) >= 0)) {
+  Inherit.prototype._find = function (trait) {
+    if (this.bind.source && indexOf.call(this.props.traits, trait) >= 0) {
       return this.bind.source._inherit(trait);
     }
     return Inherit.__super__._find.apply(this, arguments);
   };
 
   return Inherit;
-
-})(Parent);
+}(Parent);
 
 module.exports = Inherit;
 
 },{"./parent":30}],30:[function(require,module,exports){
-var Parent, Primitive,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    Primitive,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
-Parent = (function(superClass) {
+Parent = function (superClass) {
   extend(Parent, superClass);
 
   function Parent() {
@@ -51316,21 +51438,30 @@ Parent = (function(superClass) {
   Parent.traits = ['node'];
 
   return Parent;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Parent;
 
 },{"../../primitive":27}],31:[function(require,module,exports){
-var Parent, Root, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    Root,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('./parent');
 
 Util = require('../../../util');
 
-Root = (function(superClass) {
+Root = function (superClass) {
   extend(Root, superClass);
 
   function Root() {
@@ -51339,7 +51470,7 @@ Root = (function(superClass) {
 
   Root.traits = ['node', 'root', 'clock', 'scene', 'vertex', 'unit'];
 
-  Root.prototype.init = function() {
+  Root.prototype.init = function () {
     this.size = null;
     this.cameraEvent = {
       type: 'root.camera'
@@ -51362,15 +51493,15 @@ Root = (function(superClass) {
     return this.camera = null;
   };
 
-  Root.prototype.make = function() {
+  Root.prototype.make = function () {
     return this._helpers.unit.make();
   };
 
-  Root.prototype.unmake = function() {
+  Root.prototype.unmake = function () {
     return this._helpers.unit.unmake();
   };
 
-  Root.prototype.change = function(changed, touched, init) {
+  Root.prototype.change = function (changed, touched, init) {
     if (changed['root.camera'] || init) {
       this._unattach();
       this._attach(this.props.camera, 'camera', this.setCamera, this, this, true);
@@ -51378,7 +51509,7 @@ Root = (function(superClass) {
     }
   };
 
-  Root.prototype.adopt = function(renderable) {
+  Root.prototype.adopt = function (renderable) {
     var i, len, object, ref, results;
     ref = renderable.renders;
     results = [];
@@ -51389,7 +51520,7 @@ Root = (function(superClass) {
     return results;
   };
 
-  Root.prototype.unadopt = function(renderable) {
+  Root.prototype.unadopt = function (renderable) {
     var i, len, object, ref, results;
     ref = renderable.renders;
     results = [];
@@ -51400,19 +51531,19 @@ Root = (function(superClass) {
     return results;
   };
 
-  Root.prototype.select = function(selector) {
+  Root.prototype.select = function (selector) {
     return this.node.model.select(selector);
   };
 
-  Root.prototype.watch = function(selector, handler) {
+  Root.prototype.watch = function (selector, handler) {
     return this.node.model.watch(selector, handler);
   };
 
-  Root.prototype.unwatch = function(handler) {
+  Root.prototype.unwatch = function (handler) {
     return this.node.model.unwatch(handler);
   };
 
-  Root.prototype.resize = function(size) {
+  Root.prototype.resize = function (size) {
     this.size = size;
     return this.trigger({
       type: 'root.resize',
@@ -51420,41 +51551,41 @@ Root = (function(superClass) {
     });
   };
 
-  Root.prototype.getSize = function() {
+  Root.prototype.getSize = function () {
     return this.size;
   };
 
-  Root.prototype.getSpeed = function() {
+  Root.prototype.getSpeed = function () {
     return this.props.speed;
   };
 
-  Root.prototype.getUnit = function() {
+  Root.prototype.getUnit = function () {
     return this._helpers.unit.get();
   };
 
-  Root.prototype.getUnitUniforms = function() {
+  Root.prototype.getUnitUniforms = function () {
     return this._helpers.unit.uniforms();
   };
 
-  Root.prototype.pre = function() {
+  Root.prototype.pre = function () {
     this.getCamera().updateProjectionMatrix();
     this.trigger(this.clockEvent);
     return this.trigger(this.preEvent);
   };
 
-  Root.prototype.update = function() {
+  Root.prototype.update = function () {
     return this.trigger(this.updateEvent);
   };
 
-  Root.prototype.render = function() {
+  Root.prototype.render = function () {
     return this.trigger(this.renderEvent);
   };
 
-  Root.prototype.post = function() {
+  Root.prototype.post = function () {
     return this.trigger(this.postEvent);
   };
 
-  Root.prototype.setCamera = function() {
+  Root.prototype.setCamera = function () {
     var camera, ref;
     camera = (ref = this.select(this.props.camera)[0]) != null ? ref.controller : void 0;
     if (this.camera !== camera) {
@@ -51465,16 +51596,16 @@ Root = (function(superClass) {
     }
   };
 
-  Root.prototype.getCamera = function() {
+  Root.prototype.getCamera = function () {
     var ref, ref1;
     return (ref = (ref1 = this.camera) != null ? ref1.getCamera() : void 0) != null ? ref : this._context.defaultCamera;
   };
 
-  Root.prototype.getTime = function() {
+  Root.prototype.getTime = function () {
     return this._context.time;
   };
 
-  Root.prototype.vertex = function(shader, pass) {
+  Root.prototype.vertex = function (shader, pass) {
     if (pass === 2) {
       return shader.pipe('view.position');
     }
@@ -51485,21 +51616,30 @@ Root = (function(superClass) {
   };
 
   return Root;
-
-})(Parent);
+}(Parent);
 
 module.exports = Root;
 
 },{"../../../util":158,"./parent":30}],32:[function(require,module,exports){
-var Primitive, Source, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Primitive,
+    Source,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Source = (function(superClass) {
+Source = function (superClass) {
   extend(Source, superClass);
 
   function Source() {
@@ -51508,21 +51648,21 @@ Source = (function(superClass) {
 
   Source.traits = ['node', 'source', 'index'];
 
-  Source.prototype.made = function() {
+  Source.prototype.made = function () {
     return this.trigger({
       type: 'source.rebuild'
     });
   };
 
-  Source.prototype.indexShader = function(shader) {
+  Source.prototype.indexShader = function (shader) {
     return shader.pipe(Util.GLSL.identity('vec4'));
   };
 
-  Source.prototype.sourceShader = function(shader) {
+  Source.prototype.sourceShader = function (shader) {
     return shader.pipe(Util.GLSL.identity('vec4'));
   };
 
-  Source.prototype.getDimensions = function() {
+  Source.prototype.getDimensions = function () {
     return {
       items: 1,
       width: 1,
@@ -51531,34 +51671,43 @@ Source = (function(superClass) {
     };
   };
 
-  Source.prototype.getActiveDimensions = function() {
+  Source.prototype.getActiveDimensions = function () {
     return this.getDimensions();
   };
 
-  Source.prototype.getIndexDimensions = function() {
+  Source.prototype.getIndexDimensions = function () {
     return this.getActiveDimensions();
   };
 
-  Source.prototype.getFutureDimensions = function() {
+  Source.prototype.getFutureDimensions = function () {
     return this.getActiveDimensions();
   };
 
   return Source;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Source;
 
 },{"../../../util":158,"../../primitive":27}],33:[function(require,module,exports){
-var Parent, Unit, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    Unit,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('./parent');
 
 Util = require('../../../util');
 
-Unit = (function(superClass) {
+Unit = function (superClass) {
   extend(Unit, superClass);
 
   function Unit() {
@@ -51567,38 +51716,47 @@ Unit = (function(superClass) {
 
   Unit.traits = ['node', 'unit'];
 
-  Unit.prototype.make = function() {
+  Unit.prototype.make = function () {
     return this._helpers.unit.make();
   };
 
-  Unit.prototype.unmake = function() {
+  Unit.prototype.unmake = function () {
     return this._helpers.unit.unmake();
   };
 
-  Unit.prototype.getUnit = function() {
+  Unit.prototype.getUnit = function () {
     return this._helpers.unit.get();
   };
 
-  Unit.prototype.getUnitUniforms = function() {
+  Unit.prototype.getUnitUniforms = function () {
     return this._helpers.unit.uniforms();
   };
 
   return Unit;
-
-})(Parent);
+}(Parent);
 
 module.exports = Unit;
 
 },{"../../../util":158,"./parent":30}],34:[function(require,module,exports){
-var Camera, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Camera,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Camera = (function(superClass) {
+Camera = function (superClass) {
   extend(Camera, superClass);
 
   function Camera() {
@@ -51607,30 +51765,30 @@ Camera = (function(superClass) {
 
   Camera.traits = ['node', 'camera'];
 
-  Camera.prototype.init = function() {};
+  Camera.prototype.init = function () {};
 
-  Camera.prototype.make = function() {
+  Camera.prototype.make = function () {
     var camera;
     camera = this._context.defaultCamera;
     this.camera = this.props.proxy ? camera : camera.clone();
-    this.euler = new THREE.Euler;
-    return this.quat = new THREE.Quaternion;
+    this.euler = new THREE.Euler();
+    return this.quat = new THREE.Quaternion();
   };
 
-  Camera.prototype.unmake = function() {};
+  Camera.prototype.unmake = function () {};
 
-  Camera.prototype.getCamera = function() {
+  Camera.prototype.getCamera = function () {
     return this.camera;
   };
 
-  Camera.prototype.change = function(changed, touched, init) {
+  Camera.prototype.change = function (changed, touched, init) {
     var aspect, fov, lookAt, position, quaternion, ref, rotation, up;
     if (changed['camera.position'] || changed['camera.quaternion'] || changed['camera.rotation'] || changed['camera.lookAt'] || changed['camera.up'] || changed['camera.fov'] || init) {
       ref = this.props, position = ref.position, quaternion = ref.quaternion, rotation = ref.rotation, lookAt = ref.lookAt, up = ref.up, fov = ref.fov, aspect = ref.aspect;
       if (position != null) {
         this.camera.position.copy(position);
       }
-      if ((quaternion != null) || (rotation != null) || (lookAt != null)) {
+      if (quaternion != null || rotation != null || lookAt != null) {
         if (lookAt != null) {
           this.camera.lookAt(lookAt);
         } else {
@@ -51645,7 +51803,7 @@ Camera = (function(superClass) {
           this.camera.quaternion.multiply(quaternion);
         }
       }
-      if ((fov != null) && (this.camera.fov != null)) {
+      if (fov != null && this.camera.fov != null) {
         this.camera.fov = fov;
       }
       if (up != null) {
@@ -51656,12 +51814,13 @@ Camera = (function(superClass) {
   };
 
   return Camera;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Camera;
 
 },{"../../../util":158,"../../primitive":27}],35:[function(require,module,exports){
+'use strict';
+
 var Classes;
 
 Classes = {
@@ -51735,15 +51894,25 @@ Classes = {
 module.exports = Classes;
 
 },{"./base/group":28,"./base/inherit":29,"./base/root":31,"./base/unit":33,"./camera/camera":34,"./data/area":36,"./data/array":37,"./data/interval":40,"./data/matrix":41,"./data/scale":42,"./data/volume":43,"./data/voxel":44,"./draw/axis":45,"./draw/face":46,"./draw/grid":47,"./draw/line":48,"./draw/point":49,"./draw/strip":50,"./draw/surface":51,"./draw/ticks":52,"./draw/vector":53,"./operator/clamp":56,"./operator/grow":57,"./operator/join":58,"./operator/lerp":59,"./operator/memo":60,"./operator/readback":62,"./operator/repeat":63,"./operator/resample":64,"./operator/slice":65,"./operator/split":66,"./operator/spread":67,"./operator/subdivide":68,"./operator/swizzle":69,"./operator/transpose":70,"./overlay/dom":71,"./overlay/html":72,"./present/move":73,"./present/play":74,"./present/present":75,"./present/reveal":76,"./present/slide":77,"./present/step":78,"./rtt/compose":81,"./rtt/rtt":82,"./shader/shader":83,"./text/format":84,"./text/label":85,"./text/retext":86,"./text/text":87,"./time/clock":88,"./time/now":89,"./transform/fragment":91,"./transform/layer":92,"./transform/mask":93,"./transform/transform3":95,"./transform/transform4":96,"./transform/vertex":97,"./view/cartesian":99,"./view/cartesian4":100,"./view/polar":101,"./view/spherical":102,"./view/stereographic":103,"./view/stereographic4":104,"./view/view":105}],36:[function(require,module,exports){
-var Area, Matrix, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Area,
+    Matrix,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Matrix = require('./matrix');
 
 Util = require('../../../util');
 
-Area = (function(superClass) {
+Area = function (superClass) {
   extend(Area, superClass);
 
   function Area() {
@@ -51752,7 +51921,7 @@ Area = (function(superClass) {
 
   Area.traits = ['node', 'buffer', 'active', 'data', 'source', 'index', 'matrix', 'texture', 'raw', 'span:x', 'span:y', 'area', 'sampler:x', 'sampler:y'];
 
-  Area.prototype.updateSpan = function() {
+  Area.prototype.updateSpan = function () {
     var centeredX, centeredY, dimensions, height, inverseX, inverseY, padX, padY, rangeX, rangeY, spanX, spanY, width;
     dimensions = this.props.axes;
     width = this.props.width;
@@ -51787,60 +51956,69 @@ Area = (function(superClass) {
     return this.aY += padY * this.bY;
   };
 
-  Area.prototype.callback = function(callback) {
+  Area.prototype.callback = function (callback) {
     this.updateSpan();
     if (this.last === callback) {
       return this._callback;
     }
     this.last = callback;
     if (callback.length <= 5) {
-      return this._callback = (function(_this) {
-        return function(emit, i, j) {
+      return this._callback = function (_this) {
+        return function (emit, i, j) {
           var x, y;
           x = _this.aX + _this.bX * i;
           y = _this.aY + _this.bY * j;
           return callback(emit, x, y, i, j);
         };
-      })(this);
+      }(this);
     } else {
-      return this._callback = (function(_this) {
-        return function(emit, i, j) {
+      return this._callback = function (_this) {
+        return function (emit, i, j) {
           var x, y;
           x = _this.aX + _this.bX * i;
           y = _this.aY + _this.bY * j;
           return callback(emit, x, y, i, j, _this.bufferClock, _this.bufferStep);
         };
-      })(this);
+      }(this);
     }
   };
 
-  Area.prototype.make = function() {
+  Area.prototype.make = function () {
     Area.__super__.make.apply(this, arguments);
     this._helpers.span.make();
     return this._listen(this, 'span.range', this.updateSpan);
   };
 
-  Area.prototype.unmake = function() {
+  Area.prototype.unmake = function () {
     Area.__super__.unmake.apply(this, arguments);
     return this._helpers.span.unmake();
   };
 
   return Area;
-
-})(Matrix);
+}(Matrix);
 
 module.exports = Area;
 
 },{"../../../util":158,"./matrix":41}],37:[function(require,module,exports){
-var Array_, Buffer, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Array_,
+    Buffer,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Buffer = require('./buffer');
 
 Util = require('../../../util');
 
-Array_ = (function(superClass) {
+Array_ = function (superClass) {
   extend(Array_, superClass);
 
   function Array_() {
@@ -51849,7 +52027,7 @@ Array_ = (function(superClass) {
 
   Array_.traits = ['node', 'buffer', 'active', 'data', 'source', 'index', 'array', 'texture', 'raw'];
 
-  Array_.prototype.init = function() {
+  Array_.prototype.init = function () {
     this.buffer = this.spec = null;
     this.space = {
       width: 0,
@@ -51859,20 +52037,20 @@ Array_ = (function(superClass) {
       width: 0
     };
     this.storage = 'arrayBuffer';
-    this.passthrough = function(emit, x) {
+    this.passthrough = function (emit, x) {
       return emit(x, 0, 0, 0);
     };
     return Array_.__super__.init.apply(this, arguments);
   };
 
-  Array_.prototype.sourceShader = function(shader) {
+  Array_.prototype.sourceShader = function (shader) {
     var dims;
     dims = this.getDimensions();
     this.alignShader(dims, shader);
     return this.buffer.shader(shader);
   };
 
-  Array_.prototype.getDimensions = function() {
+  Array_.prototype.getDimensions = function () {
     return {
       items: this.items,
       width: this.space.width,
@@ -51881,7 +52059,7 @@ Array_ = (function(superClass) {
     };
   };
 
-  Array_.prototype.getActiveDimensions = function() {
+  Array_.prototype.getActiveDimensions = function () {
     return {
       items: this.items,
       width: this.used.width,
@@ -51890,7 +52068,7 @@ Array_ = (function(superClass) {
     };
   };
 
-  Array_.prototype.getFutureDimensions = function() {
+  Array_.prototype.getFutureDimensions = function () {
     return {
       items: this.items,
       width: this.used.width,
@@ -51899,7 +52077,7 @@ Array_ = (function(superClass) {
     };
   };
 
-  Array_.prototype.getRawDimensions = function() {
+  Array_.prototype.getRawDimensions = function () {
     return {
       items: this.items,
       width: space.width,
@@ -51908,7 +52086,7 @@ Array_ = (function(superClass) {
     };
   };
 
-  Array_.prototype.make = function() {
+  Array_.prototype.make = function () {
     var channels, data, dims, history, items, magFilter, minFilter, ref, ref1, ref2, reserve, space, type, width;
     Array_.__super__.make.apply(this, arguments);
     minFilter = (ref = this.minFilter) != null ? ref : this.props.minFilter;
@@ -51942,7 +52120,7 @@ Array_ = (function(superClass) {
     });
   };
 
-  Array_.prototype.unmake = function() {
+  Array_.prototype.unmake = function () {
     Array_.__super__.unmake.apply(this, arguments);
     if (this.buffer) {
       this.buffer.dispose();
@@ -51950,7 +52128,7 @@ Array_ = (function(superClass) {
     }
   };
 
-  Array_.prototype.change = function(changed, touched, init) {
+  Array_.prototype.change = function (changed, touched, init) {
     var width;
     if (touched['texture'] || changed['history.history'] || changed['buffer.channels'] || changed['buffer.items'] || changed['array.bufferWidth']) {
       return this.rebuild();
@@ -51969,19 +52147,19 @@ Array_ = (function(superClass) {
     }
   };
 
-  Array_.prototype.callback = function(callback) {
+  Array_.prototype.callback = function (callback) {
     if (callback.length <= 2) {
       return callback;
     } else {
-      return (function(_this) {
-        return function(emit, i) {
+      return function (_this) {
+        return function (emit, i) {
           return callback(emit, i, _this.bufferClock, _this.bufferStep);
         };
-      })(this);
+      }(this);
     }
   };
 
-  Array_.prototype.update = function() {
+  Array_.prototype.update = function () {
     var data, filled, l, space, used;
     if (!this.buffer) {
       return;
@@ -51990,8 +52168,8 @@ Array_ = (function(superClass) {
     space = this.space, used = this.used;
     l = used.width;
     filled = this.buffer.getFilled();
-    this.syncBuffer((function(_this) {
-      return function(abort) {
+    this.syncBuffer(function (_this) {
+      return function (abort) {
         var base, dims, width;
         if (data != null) {
           dims = Util.Data.getDimensions(data, _this.spec);
@@ -52012,7 +52190,7 @@ Array_ = (function(superClass) {
           return used.width = width;
         }
       };
-    })(this));
+    }(this));
     if (used.width !== l || filled !== this.buffer.getFilled()) {
       return this.trigger({
         type: 'source.resize'
@@ -52021,21 +52199,30 @@ Array_ = (function(superClass) {
   };
 
   return Array_;
-
-})(Buffer);
+}(Buffer);
 
 module.exports = Array_;
 
 },{"../../../util":158,"./buffer":38}],38:[function(require,module,exports){
-var Buffer, Data, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    Data,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Data = require('./data');
 
 Util = require('../../../util');
 
-Buffer = (function(superClass) {
+Buffer = function (superClass) {
   extend(Buffer, superClass);
 
   function Buffer() {
@@ -52044,7 +52231,7 @@ Buffer = (function(superClass) {
 
   Buffer.traits = ['node', 'buffer', 'active', 'data', 'source', 'index', 'texture'];
 
-  Buffer.prototype.init = function() {
+  Buffer.prototype.init = function () {
     this.bufferSlack = 0;
     this.bufferFrames = 0;
     this.bufferTime = 0;
@@ -52054,26 +52241,26 @@ Buffer = (function(superClass) {
     return Buffer.__super__.init.apply(this, arguments);
   };
 
-  Buffer.prototype.make = function() {
+  Buffer.prototype.make = function () {
     Buffer.__super__.make.apply(this, arguments);
     return this.clockParent = this._inherit('clock');
   };
 
-  Buffer.prototype.unmake = function() {
+  Buffer.prototype.unmake = function () {
     return Buffer.__super__.unmake.apply(this, arguments);
   };
 
-  Buffer.prototype.rawBuffer = function() {
+  Buffer.prototype.rawBuffer = function () {
     return this.buffer;
   };
 
-  Buffer.prototype.emitter = function() {
+  Buffer.prototype.emitter = function () {
     var channels, items, ref;
     ref = this.props, channels = ref.channels, items = ref.items;
     return Buffer.__super__.emitter.call(this, channels, items);
   };
 
-  Buffer.prototype.change = function(changed, touched, init) {
+  Buffer.prototype.change = function (changed, touched, init) {
     var fps;
     if (changed['buffer.fps'] || init) {
       fps = this.props.fps;
@@ -52081,7 +52268,7 @@ Buffer = (function(superClass) {
     }
   };
 
-  Buffer.prototype.syncBuffer = function(callback) {
+  Buffer.prototype.syncBuffer = function (callback) {
     var abort, delta, filled, fps, frame, frames, hurry, i, j, limit, live, observe, realtime, ref, ref1, results, slack, speed, step, stop, time;
     if (!this.buffer) {
       return;
@@ -52106,7 +52293,7 @@ Buffer = (function(superClass) {
         frames = Math.max(1, frames);
       }
       stop = false;
-      abort = function() {
+      abort = function abort() {
         return stop = true;
       };
       results = [];
@@ -52125,40 +52312,49 @@ Buffer = (function(superClass) {
       this.bufferDelta = time.delta;
       this.bufferClock = time.clock;
       this.bufferStep = time.step;
-      return callback((function() {}), this.bufferFrames++, 0, 1);
+      return callback(function () {}, this.bufferFrames++, 0, 1);
     }
   };
 
-  Buffer.prototype.alignShader = function(dims, shader) {
+  Buffer.prototype.alignShader = function (dims, shader) {
     var aligned, magFilter, minFilter, mixed, nearest, ref;
     ref = this.props, minFilter = ref.minFilter, magFilter = ref.magFilter, aligned = ref.aligned;
-    mixed = (dims.items > 1 && dims.width > 1) || (dims.height > 1 && dims.depth > 1);
+    mixed = dims.items > 1 && dims.width > 1 || dims.height > 1 && dims.depth > 1;
     if (aligned || !mixed) {
       return;
     }
     nearest = minFilter === this.node.attributes['texture.minFilter']["enum"].nearest && magFilter === this.node.attributes['texture.magFilter']["enum"].nearest;
     if (!nearest) {
-      console.warn((this.node.toString()) + " - Cannot use linear min/magFilter with 3D/4D sampling");
+      console.warn(this.node.toString() + " - Cannot use linear min/magFilter with 3D/4D sampling");
     }
     return shader.pipe('map.xyzw.align');
   };
 
   return Buffer;
-
-})(Data);
+}(Data);
 
 module.exports = Buffer;
 
 },{"../../../util":158,"./data":39}],39:[function(require,module,exports){
-var Data, Source, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Data,
+    Source,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Source = require('../base/source');
 
 Util = require('../../../util');
 
-Data = (function(superClass) {
+Data = function (superClass) {
   extend(Data, superClass);
 
   function Data() {
@@ -52167,12 +52363,12 @@ Data = (function(superClass) {
 
   Data.traits = ['node', 'data', 'source', 'index', 'entity', 'active'];
 
-  Data.prototype.init = function() {
+  Data.prototype.init = function () {
     this.dataEmitter = null;
     return this.dataSizes = null;
   };
 
-  Data.prototype.emitter = function(channels, items) {
+  Data.prototype.emitter = function (channels, items) {
     var bind, data, emitter, expr, last, resolve, sizes, thunk;
     data = this.props.data;
     bind = this.props.bind;
@@ -52197,47 +52393,56 @@ Data = (function(superClass) {
     return emitter;
   };
 
-  Data.prototype.callback = function(callback) {
-    return callback != null ? callback : function() {};
+  Data.prototype.callback = function (callback) {
+    return callback != null ? callback : function () {};
   };
 
-  Data.prototype.update = function() {};
+  Data.prototype.update = function () {};
 
-  Data.prototype.make = function() {
+  Data.prototype.make = function () {
     this._helpers.active.make();
     this.first = true;
-    return this._listen('root', 'root.update', (function(_this) {
-      return function() {
+    return this._listen('root', 'root.update', function (_this) {
+      return function () {
         if (_this.isActive || _this.first) {
           _this.update();
         }
         return _this.first = false;
       };
-    })(this));
+    }(this));
   };
 
-  Data.prototype.unmake = function() {
+  Data.prototype.unmake = function () {
     this._helpers.active.unmake();
     this.dataEmitter = null;
     return this.dataSizes = null;
   };
 
   return Data;
-
-})(Source);
+}(Source);
 
 module.exports = Data;
 
 },{"../../../util":158,"../base/source":32}],40:[function(require,module,exports){
-var Interval, Util, _Array,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Interval,
+    Util,
+    _Array,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 _Array = require('./array');
 
 Util = require('../../../util');
 
-Interval = (function(superClass) {
+Interval = function (superClass) {
   extend(Interval, superClass);
 
   function Interval() {
@@ -52246,7 +52451,7 @@ Interval = (function(superClass) {
 
   Interval.traits = ['node', 'buffer', 'active', 'data', 'source', 'index', 'texture', 'array', 'span', 'interval', 'sampler', 'raw'];
 
-  Interval.prototype.updateSpan = function() {
+  Interval.prototype.updateSpan = function () {
     var centered, dimension, inverse, pad, range, span, width;
     dimension = this.props.axis;
     width = this.props.width;
@@ -52266,58 +52471,67 @@ Interval = (function(superClass) {
     return this.a += pad * this.b;
   };
 
-  Interval.prototype.callback = function(callback) {
+  Interval.prototype.callback = function (callback) {
     this.updateSpan();
     if (this.last === callback) {
       return this._callback;
     }
     this.last = callback;
     if (callback.length <= 3) {
-      return this._callback = (function(_this) {
-        return function(emit, i) {
+      return this._callback = function (_this) {
+        return function (emit, i) {
           var x;
           x = _this.a + _this.b * i;
           return callback(emit, x, i);
         };
-      })(this);
+      }(this);
     } else {
-      return this._callback = (function(_this) {
-        return function(emit, i) {
+      return this._callback = function (_this) {
+        return function (emit, i) {
           var x;
           x = _this.a + _this.b * i;
           return callback(emit, x, i, _this.bufferClock, _this.bufferStep);
         };
-      })(this);
+      }(this);
     }
   };
 
-  Interval.prototype.make = function() {
+  Interval.prototype.make = function () {
     Interval.__super__.make.apply(this, arguments);
     this._helpers.span.make();
     return this._listen(this, 'span.range', this.updateSpan);
   };
 
-  Interval.prototype.unmake = function() {
+  Interval.prototype.unmake = function () {
     Interval.__super__.unmake.apply(this, arguments);
     return this._helpers.span.unmake();
   };
 
   return Interval;
-
-})(_Array);
+}(_Array);
 
 module.exports = Interval;
 
 },{"../../../util":158,"./array":37}],41:[function(require,module,exports){
-var Buffer, Matrix, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    Matrix,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Buffer = require('./buffer');
 
 Util = require('../../../util');
 
-Matrix = (function(superClass) {
+Matrix = function (superClass) {
   extend(Matrix, superClass);
 
   function Matrix() {
@@ -52326,7 +52540,7 @@ Matrix = (function(superClass) {
 
   Matrix.traits = ['node', 'buffer', 'active', 'data', 'source', 'index', 'texture', 'matrix', 'raw'];
 
-  Matrix.prototype.init = function() {
+  Matrix.prototype.init = function () {
     this.buffer = this.spec = null;
     this.space = {
       width: 0,
@@ -52338,20 +52552,20 @@ Matrix = (function(superClass) {
       height: 0
     };
     this.storage = 'matrixBuffer';
-    this.passthrough = function(emit, x, y) {
+    this.passthrough = function (emit, x, y) {
       return emit(x, y, 0, 0);
     };
     return Matrix.__super__.init.apply(this, arguments);
   };
 
-  Matrix.prototype.sourceShader = function(shader) {
+  Matrix.prototype.sourceShader = function (shader) {
     var dims;
     dims = this.getDimensions();
     this.alignShader(dims, shader);
     return this.buffer.shader(shader);
   };
 
-  Matrix.prototype.getDimensions = function() {
+  Matrix.prototype.getDimensions = function () {
     return {
       items: this.items,
       width: this.space.width,
@@ -52360,7 +52574,7 @@ Matrix = (function(superClass) {
     };
   };
 
-  Matrix.prototype.getActiveDimensions = function() {
+  Matrix.prototype.getActiveDimensions = function () {
     return {
       items: this.items,
       width: this.used.width,
@@ -52369,7 +52583,7 @@ Matrix = (function(superClass) {
     };
   };
 
-  Matrix.prototype.getFutureDimensions = function() {
+  Matrix.prototype.getFutureDimensions = function () {
     return {
       items: this.items,
       width: this.used.width,
@@ -52378,7 +52592,7 @@ Matrix = (function(superClass) {
     };
   };
 
-  Matrix.prototype.getRawDimensions = function() {
+  Matrix.prototype.getRawDimensions = function () {
     return {
       items: this.items,
       width: this.space.width,
@@ -52387,7 +52601,7 @@ Matrix = (function(superClass) {
     };
   };
 
-  Matrix.prototype.make = function() {
+  Matrix.prototype.make = function () {
     var channels, data, dims, height, history, items, magFilter, minFilter, ref, ref1, ref2, reserveX, reserveY, space, type, width;
     Matrix.__super__.make.apply(this, arguments);
     minFilter = (ref = this.minFilter) != null ? ref : this.props.minFilter;
@@ -52426,7 +52640,7 @@ Matrix = (function(superClass) {
     });
   };
 
-  Matrix.prototype.unmake = function() {
+  Matrix.prototype.unmake = function () {
     Matrix.__super__.unmake.apply(this, arguments);
     if (this.buffer) {
       this.buffer.dispose();
@@ -52434,7 +52648,7 @@ Matrix = (function(superClass) {
     }
   };
 
-  Matrix.prototype.change = function(changed, touched, init) {
+  Matrix.prototype.change = function (changed, touched, init) {
     var height, width;
     if (touched['texture'] || changed['matrix.history'] || changed['buffer.channels'] || changed['buffer.items'] || changed['matrix.bufferWidth'] || changed['matrix.bufferHeight']) {
       return this.rebuild();
@@ -52459,19 +52673,19 @@ Matrix = (function(superClass) {
     }
   };
 
-  Matrix.prototype.callback = function(callback) {
+  Matrix.prototype.callback = function (callback) {
     if (callback.length <= 3) {
       return callback;
     } else {
-      return (function(_this) {
-        return function(emit, i, j) {
+      return function (_this) {
+        return function (emit, i, j) {
           return callback(emit, i, j, _this.bufferClock, _this.bufferStep);
         };
-      })(this);
+      }(this);
     }
   };
 
-  Matrix.prototype.update = function() {
+  Matrix.prototype.update = function () {
     var data, filled, h, space, used, w;
     if (!this.buffer) {
       return;
@@ -52481,8 +52695,8 @@ Matrix = (function(superClass) {
     w = used.width;
     h = used.height;
     filled = this.buffer.getFilled();
-    this.syncBuffer((function(_this) {
-      return function(abort) {
+    this.syncBuffer(function (_this) {
+      return function (abort) {
         var _w, base, dims, height, length, width;
         if (data != null) {
           dims = Util.Data.getDimensions(data, _this.spec);
@@ -52509,7 +52723,7 @@ Matrix = (function(superClass) {
           }
         }
       };
-    })(this));
+    }(this));
     if (used.width !== w || used.height !== h || filled !== this.buffer.getFilled()) {
       return this.trigger({
         type: 'source.resize'
@@ -52518,21 +52732,30 @@ Matrix = (function(superClass) {
   };
 
   return Matrix;
-
-})(Buffer);
+}(Buffer);
 
 module.exports = Matrix;
 
 },{"../../../util":158,"./buffer":38}],42:[function(require,module,exports){
-var Scale, Source, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Scale,
+    Source,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Source = require('../base/source');
 
 Util = require('../../../util');
 
-Scale = (function(superClass) {
+Scale = function (superClass) {
   extend(Scale, superClass);
 
   function Scale() {
@@ -52541,19 +52764,19 @@ Scale = (function(superClass) {
 
   Scale.traits = ['node', 'source', 'index', 'interval', 'span', 'scale', 'raw', 'origin'];
 
-  Scale.prototype.init = function() {
+  Scale.prototype.init = function () {
     return this.used = this.space = this.scaleAxis = this.sampler = null;
   };
 
-  Scale.prototype.rawBuffer = function() {
+  Scale.prototype.rawBuffer = function () {
     return this.buffer;
   };
 
-  Scale.prototype.sourceShader = function(shader) {
+  Scale.prototype.sourceShader = function (shader) {
     return shader.pipe(this.sampler);
   };
 
-  Scale.prototype.getDimensions = function() {
+  Scale.prototype.getDimensions = function () {
     return {
       items: 1,
       width: this.space,
@@ -52562,7 +52785,7 @@ Scale = (function(superClass) {
     };
   };
 
-  Scale.prototype.getActiveDimensions = function() {
+  Scale.prototype.getActiveDimensions = function () {
     return {
       items: 1,
       width: this.used,
@@ -52571,11 +52794,11 @@ Scale = (function(superClass) {
     };
   };
 
-  Scale.prototype.getRawDimensions = function() {
+  Scale.prototype.getRawDimensions = function () {
     return this.getDimensions();
   };
 
-  Scale.prototype.make = function() {
+  Scale.prototype.make = function () {
     var p, positionUniforms, samples;
     this.space = samples = this._helpers.scale.divide('');
     this.buffer = this._renderables.make('dataBuffer', {
@@ -52596,12 +52819,12 @@ Scale = (function(superClass) {
     return this._listen(this, 'span.range', this.updateRanges);
   };
 
-  Scale.prototype.unmake = function() {
+  Scale.prototype.unmake = function () {
     this.scaleAxis = null;
     return this._helpers.span.unmake();
   };
 
-  Scale.prototype.change = function(changed, touched, init) {
+  Scale.prototype.change = function (changed, touched, init) {
     if (changed['scale.divide']) {
       return this.rebuild();
     }
@@ -52610,7 +52833,7 @@ Scale = (function(superClass) {
     }
   };
 
-  Scale.prototype.updateRanges = function() {
+  Scale.prototype.updateRanges = function () {
     var axis, max, min, origin, range, ref, ticks, used;
     used = this.used;
     ref = this.props, axis = ref.axis, origin = ref.origin;
@@ -52629,21 +52852,30 @@ Scale = (function(superClass) {
   };
 
   return Scale;
-
-})(Source);
+}(Source);
 
 module.exports = Scale;
 
 },{"../../../util":158,"../base/source":32}],43:[function(require,module,exports){
-var Util, Volume, Voxel,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Util,
+    Volume,
+    Voxel,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Voxel = require('./voxel');
 
 Util = require('../../../util');
 
-Volume = (function(superClass) {
+Volume = function (superClass) {
   extend(Volume, superClass);
 
   function Volume() {
@@ -52652,7 +52884,7 @@ Volume = (function(superClass) {
 
   Volume.traits = ['node', 'buffer', 'active', 'data', 'source', 'index', 'texture', 'voxel', 'span:x', 'span:y', 'span:z', 'volume', 'sampler:x', 'sampler:y', 'sampler:z', 'raw'];
 
-  Volume.prototype.updateSpan = function() {
+  Volume.prototype.updateSpan = function () {
     var centeredX, centeredY, centeredZ, depth, dimensions, height, inverseX, inverseY, inverseZ, padX, padY, padZ, rangeX, rangeY, rangeZ, spanX, spanY, spanZ, width;
     dimensions = this.props.axes;
     width = this.props.width;
@@ -52702,63 +52934,76 @@ Volume = (function(superClass) {
     return this.aZ += this.bZ * padY;
   };
 
-  Volume.prototype.callback = function(callback) {
+  Volume.prototype.callback = function (callback) {
     this.updateSpan();
     if (this.last === callback) {
       return this._callback;
     }
     this.last = callback;
     if (callback.length <= 7) {
-      return this._callback = (function(_this) {
-        return function(emit, i, j, k) {
+      return this._callback = function (_this) {
+        return function (emit, i, j, k) {
           var x, y, z;
           x = _this.aX + _this.bX * i;
           y = _this.aY + _this.bY * j;
           z = _this.aZ + _this.bZ * k;
           return callback(emit, x, y, z, i, j, k);
         };
-      })(this);
+      }(this);
     } else {
-      return this._callback = (function(_this) {
-        return function(emit, i, j, k) {
+      return this._callback = function (_this) {
+        return function (emit, i, j, k) {
           var x, y, z;
           x = _this.aX + _this.bX * i;
           y = _this.aY + _this.bY * j;
           z = _this.aZ + _this.bZ * k;
           return callback(emit, x, y, z, i, j, k, _this.bufferClock, _this.bufferStep);
         };
-      })(this);
+      }(this);
     }
   };
 
-  Volume.prototype.make = function() {
+  Volume.prototype.make = function () {
     Volume.__super__.make.apply(this, arguments);
     this._helpers.span.make();
     return this._listen(this, 'span.range', this.updateSpan);
   };
 
-  Volume.prototype.unmake = function() {
+  Volume.prototype.unmake = function () {
     Volume.__super__.unmake.apply(this, arguments);
     return this._helpers.span.unmake();
   };
 
   return Volume;
-
-})(Voxel);
+}(Voxel);
 
 module.exports = Volume;
 
 },{"../../../util":158,"./voxel":44}],44:[function(require,module,exports){
-var Buffer, Util, Voxel,
-  bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    Util,
+    Voxel,
+    bind = function bind(fn, me) {
+  return function () {
+    return fn.apply(me, arguments);
+  };
+},
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Buffer = require('./buffer');
 
 Util = require('../../../util');
 
-Voxel = (function(superClass) {
+Voxel = function (superClass) {
   extend(Voxel, superClass);
 
   function Voxel() {
@@ -52768,7 +53013,7 @@ Voxel = (function(superClass) {
 
   Voxel.traits = ['node', 'buffer', 'active', 'data', 'source', 'index', 'texture', 'voxel', 'raw'];
 
-  Voxel.prototype.init = function() {
+  Voxel.prototype.init = function () {
     this.buffer = this.spec = null;
     this.space = {
       width: 0,
@@ -52781,20 +53026,20 @@ Voxel = (function(superClass) {
       depth: 0
     };
     this.storage = 'voxelBuffer';
-    this.passthrough = function(emit, x, y, z) {
+    this.passthrough = function (emit, x, y, z) {
       return emit(x, y, z, 0);
     };
     return Voxel.__super__.init.apply(this, arguments);
   };
 
-  Voxel.prototype.sourceShader = function(shader) {
+  Voxel.prototype.sourceShader = function (shader) {
     var dims;
     dims = this.getDimensions();
     this.alignShader(dims, shader);
     return this.buffer.shader(shader);
   };
 
-  Voxel.prototype.getDimensions = function() {
+  Voxel.prototype.getDimensions = function () {
     return {
       items: this.items,
       width: this.space.width,
@@ -52803,7 +53048,7 @@ Voxel = (function(superClass) {
     };
   };
 
-  Voxel.prototype.getActiveDimensions = function() {
+  Voxel.prototype.getActiveDimensions = function () {
     return {
       items: this.items,
       width: this.used.width,
@@ -52812,11 +53057,11 @@ Voxel = (function(superClass) {
     };
   };
 
-  Voxel.prototype.getRawDimensions = function() {
+  Voxel.prototype.getRawDimensions = function () {
     return this.getDimensions();
   };
 
-  Voxel.prototype.make = function() {
+  Voxel.prototype.make = function () {
     var channels, data, depth, dims, height, items, magFilter, minFilter, ref, ref1, ref2, reserveX, reserveY, reserveZ, space, type, width;
     Voxel.__super__.make.apply(this, arguments);
     minFilter = (ref = this.minFilter) != null ? ref : this.props.minFilter;
@@ -52857,7 +53102,7 @@ Voxel = (function(superClass) {
     });
   };
 
-  Voxel.prototype.unmake = function() {
+  Voxel.prototype.unmake = function () {
     Voxel.__super__.unmake.apply(this, arguments);
     if (this.buffer) {
       this.buffer.dispose();
@@ -52865,7 +53110,7 @@ Voxel = (function(superClass) {
     }
   };
 
-  Voxel.prototype.change = function(changed, touched, init) {
+  Voxel.prototype.change = function (changed, touched, init) {
     var depth, height, width;
     if (touched['texture'] || changed['buffer.channels'] || changed['buffer.items'] || changed['voxel.bufferWidth'] || changed['voxel.bufferHeight'] || changed['voxel.bufferDepth']) {
       return this.rebuild();
@@ -52896,19 +53141,19 @@ Voxel = (function(superClass) {
     }
   };
 
-  Voxel.prototype.callback = function(callback) {
+  Voxel.prototype.callback = function (callback) {
     if (callback.length <= 4) {
       return callback;
     } else {
-      return (function(_this) {
-        return function(emit, i, j, k) {
+      return function (_this) {
+        return function (emit, i, j, k) {
           return callback(emit, i, j, k, _this.bufferClock, _this.bufferStep);
         };
-      })(this);
+      }(this);
     }
   };
 
-  Voxel.prototype.update = function() {
+  Voxel.prototype.update = function () {
     var d, data, filled, h, space, used, w;
     if (!this.buffer) {
       return;
@@ -52919,8 +53164,8 @@ Voxel = (function(superClass) {
     h = used.height;
     d = used.depth;
     filled = this.buffer.getFilled();
-    this.syncBuffer((function(_this) {
-      return function(abort) {
+    this.syncBuffer(function (_this) {
+      return function (abort) {
         var _h, _w, base, depth, dims, height, length, width;
         if (data != null) {
           dims = Util.Data.getDimensions(data, _this.spec);
@@ -52953,7 +53198,7 @@ Voxel = (function(superClass) {
           }
         }
       };
-    })(this));
+    }(this));
     if (used.width !== w || used.height !== h || used.depth !== d || filled !== this.buffer.getFilled()) {
       return this.trigger({
         type: 'source.resize'
@@ -52962,21 +53207,30 @@ Voxel = (function(superClass) {
   };
 
   return Voxel;
-
-})(Buffer);
+}(Buffer);
 
 module.exports = Voxel;
 
 },{"../../../util":158,"./buffer":38}],45:[function(require,module,exports){
-var Axis, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Axis,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Axis = (function(superClass) {
+Axis = function (superClass) {
   extend(Axis, superClass);
 
   Axis.traits = ['node', 'object', 'visible', 'style', 'line', 'axis', 'span', 'interval', 'arrow', 'position', 'origin', 'shade'];
@@ -52991,7 +53245,7 @@ Axis = (function(superClass) {
     this.axisPosition = this.axisStep = this.resolution = this.line = this.arrows = null;
   }
 
-  Axis.prototype.make = function() {
+  Axis.prototype.make = function () {
     var arrowUniforms, axis, crossed, detail, end, join, lineUniforms, mask, material, position, positionUniforms, ref, ref1, ref2, samples, start, stroke, styleUniforms, swizzle, uniforms, unitUniforms;
     positionUniforms = {
       axisPosition: this._attributes.make(this._types.vec4()),
@@ -53014,7 +53268,7 @@ Axis = (function(superClass) {
     mask = this._helpers.object.mask();
     material = this._helpers.shade.pipeline() || false;
     ref2 = this.props, crossed = ref2.crossed, axis = ref2.axis;
-    if (!crossed && (mask != null) && axis > 1) {
+    if (!crossed && mask != null && axis > 1) {
       swizzle = ['x000', 'y000', 'z000', 'w000'][axis];
       mask = this._helpers.position.swizzle(mask, swizzle);
     }
@@ -53055,14 +53309,14 @@ Axis = (function(superClass) {
     return this._listen(this, 'span.range', this.updateRanges);
   };
 
-  Axis.prototype.unmake = function() {
+  Axis.prototype.unmake = function () {
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this._helpers.span.unmake();
   };
 
-  Axis.prototype.change = function(changed, touched, init) {
-    if (changed['axis.detail'] || changed['line.stroke'] || changed['line.join'] || changed['axis.crossed'] || (changed['interval.axis'] && this.props.crossed)) {
+  Axis.prototype.change = function (changed, touched, init) {
+    if (changed['axis.detail'] || changed['line.stroke'] || changed['line.join'] || changed['axis.crossed'] || changed['interval.axis'] && this.props.crossed) {
       return this.rebuild();
     }
     if (touched['interval'] || touched['span'] || touched['view'] || init) {
@@ -53070,7 +53324,7 @@ Axis = (function(superClass) {
     }
   };
 
-  Axis.prototype.updateRanges = function() {
+  Axis.prototype.updateRanges = function () {
     var axis, max, min, origin, range, ref;
     ref = this.props, axis = ref.axis, origin = ref.origin;
     range = this._helpers.span.get('', axis);
@@ -53082,21 +53336,30 @@ Axis = (function(superClass) {
   };
 
   return Axis;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Axis;
 
 },{"../../../util":158,"../../primitive":27}],46:[function(require,module,exports){
-var Face, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Face,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Face = (function(superClass) {
+Face = function (superClass) {
   extend(Face, superClass);
 
   Face.traits = ['node', 'object', 'visible', 'style', 'line', 'mesh', 'face', 'geometry', 'position', 'bind', 'shade'];
@@ -53106,7 +53369,7 @@ Face = (function(superClass) {
     this.face = null;
   }
 
-  Face.prototype.resize = function() {
+  Face.prototype.resize = function () {
     var depth, dims, height, items, map, width;
     if (this.bind.points == null) {
       return;
@@ -53127,20 +53390,18 @@ Face = (function(superClass) {
     }
   };
 
-  Face.prototype.make = function() {
+  Face.prototype.make = function () {
     var color, depth, dims, faceMaterial, fill, height, items, join, line, lineMaterial, lineUniforms, map, mask, material, objects, position, ref, ref1, shaded, stroke, styleUniforms, swizzle, uniforms, unitUniforms, width, wireUniforms;
-    this._helpers.bind.make([
-      {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }, {
-        to: 'mesh.map',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }, {
+      to: 'mesh.map',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -53206,18 +53467,18 @@ Face = (function(superClass) {
     return this._helpers.object.make(objects);
   };
 
-  Face.prototype.made = function() {
+  Face.prototype.made = function () {
     return this.resize();
   };
 
-  Face.prototype.unmake = function() {
+  Face.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this.face = this.line = null;
   };
 
-  Face.prototype.change = function(changed, touched, init) {
+  Face.prototype.change = function (changed, touched, init) {
     var fill, lineBias, ref, zBias;
     if (changed['geometry.points'] || touched['mesh']) {
       return this.rebuild();
@@ -53229,21 +53490,30 @@ Face = (function(superClass) {
   };
 
   return Face;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Face;
 
 },{"../../../util":158,"../../primitive":27}],47:[function(require,module,exports){
-var Grid, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Grid,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Grid = (function(superClass) {
+Grid = function (superClass) {
   extend(Grid, superClass);
 
   Grid.traits = ['node', 'object', 'visible', 'style', 'line', 'grid', 'area', 'position', 'origin', 'shade', 'axis:x', 'axis:y', 'scale:x', 'scale:y', 'span:x', 'span:y'];
@@ -53258,12 +53528,12 @@ Grid = (function(superClass) {
     this.axes = null;
   }
 
-  Grid.prototype.make = function() {
+  Grid.prototype.make = function () {
     var axes, axis, crossed, join, lineX, lineY, lines, mask, material, ref, ref1, stroke, transpose;
     mask = this._helpers.object.mask();
     material = this._helpers.shade.pipeline() || false;
-    axis = (function(_this) {
-      return function(first, second, transpose) {
+    axis = function (_this) {
+      return function (first, second, transpose) {
         var buffer, detail, line, lineUniforms, p, position, positionUniforms, resolution, samples, strips, styleUniforms, uniforms, unitUniforms, values;
         detail = _this._get(first + 'axis.detail');
         samples = detail + 1;
@@ -53284,7 +53554,7 @@ Grid = (function(superClass) {
           gridAxis: positionUniforms.gridAxis.value
         };
         p = position = _this._shaders.shader();
-        if ((transpose != null) && (mask != null)) {
+        if (transpose != null && mask != null) {
           mask = _this._helpers.position.swizzle(mask, transpose);
         }
         p.require(buffer.shader(_this._shaders.shader(), 2));
@@ -53314,14 +53584,14 @@ Grid = (function(superClass) {
           values: values
         };
       };
-    })(this);
+    }(this);
     ref = this.props, lineX = ref.lineX, lineY = ref.lineY, crossed = ref.crossed, axes = ref.axes;
     transpose = ['0000', 'x000', 'y000', 'z000', 'w000'][axes[1]];
     ref1 = this.props, stroke = ref1.stroke, join = ref1.join;
     this.axes = [];
     lineX && this.axes.push(axis('x.', 'y.', null));
     lineY && this.axes.push(axis('y.', 'x.', crossed ? null : transpose));
-    lines = (function() {
+    lines = function () {
       var i, len, ref2, results;
       ref2 = this.axes;
       results = [];
@@ -53330,14 +53600,14 @@ Grid = (function(superClass) {
         results.push(axis.line);
       }
       return results;
-    }).call(this);
+    }.call(this);
     this._helpers.visible.make();
     this._helpers.object.make(lines);
     this._helpers.span.make();
     return this._listen(this, 'span.range', this.updateRanges);
   };
 
-  Grid.prototype.unmake = function() {
+  Grid.prototype.unmake = function () {
     var axis, i, len, ref;
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
@@ -53350,8 +53620,8 @@ Grid = (function(superClass) {
     return this.axes = null;
   };
 
-  Grid.prototype.change = function(changed, touched, init) {
-    if (changed['x.axis.detail'] || changed['y.axis.detail'] || changed['x.axis.factor'] || changed['y.axis.factor'] || changed['grid.lineX'] || changed['grid.lineY'] || changed['line.stroke'] || changed['line.join'] || changed['grid.crossed'] || (changed['grid.axes'] && this.props.crossed)) {
+  Grid.prototype.change = function (changed, touched, init) {
+    if (changed['x.axis.detail'] || changed['y.axis.detail'] || changed['x.axis.factor'] || changed['y.axis.factor'] || changed['grid.lineX'] || changed['grid.lineY'] || changed['line.stroke'] || changed['line.join'] || changed['grid.crossed'] || changed['grid.axes'] && this.props.crossed) {
       return this.rebuild();
     }
     if (touched['x'] || touched['y'] || touched['area'] || touched['grid'] || touched['view'] || init) {
@@ -53359,10 +53629,10 @@ Grid = (function(superClass) {
     }
   };
 
-  Grid.prototype.updateRanges = function() {
+  Grid.prototype.updateRanges = function () {
     var axes, axis, lineX, lineY, origin, range1, range2, ref, ref1;
-    axis = (function(_this) {
-      return function(x, y, range1, range2, axis) {
+    axis = function (_this) {
+      return function (x, y, range1, range2, axis) {
         var buffer, first, line, max, min, n, resolution, samples, second, ticks, values;
         first = axis.first, second = axis.second, resolution = axis.resolution, samples = axis.samples, line = axis.line, buffer = axis.buffer, values = axis.values;
         min = range1.x;
@@ -53377,7 +53647,7 @@ Grid = (function(superClass) {
         n = ticks.length;
         return line.geometry.clip(samples, n, 1, 1);
       };
-    })(this);
+    }(this);
     ref = this.props, axes = ref.axes, origin = ref.origin;
     range1 = this._helpers.span.get('x.', axes[0]);
     range2 = this._helpers.span.get('y.', axes[1]);
@@ -53391,21 +53661,30 @@ Grid = (function(superClass) {
   };
 
   return Grid;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Grid;
 
 },{"../../../util":158,"../../primitive":27}],48:[function(require,module,exports){
-var Line, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Line,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Line = (function(superClass) {
+Line = function (superClass) {
   extend(Line, superClass);
 
   Line.traits = ['node', 'object', 'visible', 'style', 'line', 'arrow', 'geometry', 'position', 'bind', 'shade'];
@@ -53415,7 +53694,7 @@ Line = (function(superClass) {
     this.line = this.arrows = null;
   }
 
-  Line.prototype.resize = function() {
+  Line.prototype.resize = function () {
     var arrow, dims, i, layers, len, ref, results, ribbons, samples, strips;
     if (this.bind.points == null) {
       return;
@@ -53435,17 +53714,15 @@ Line = (function(superClass) {
     return results;
   };
 
-  Line.prototype.make = function() {
+  Line.prototype.make = function () {
     var arrowUniforms, color, dims, end, join, layers, lineUniforms, mask, material, position, proximity, ref, ref1, ribbons, samples, start, strips, stroke, styleUniforms, uniforms, unitUniforms;
-    this._helpers.bind.make([
-      {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -53518,44 +53795,53 @@ Line = (function(superClass) {
     return this._helpers.object.make(this.arrows.concat([this.line]));
   };
 
-  Line.prototype.made = function() {
+  Line.prototype.made = function () {
     return this.resize();
   };
 
-  Line.prototype.unmake = function() {
+  Line.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this.line = this.arrows = null;
   };
 
-  Line.prototype.change = function(changed, touched, init) {
+  Line.prototype.change = function (changed, touched, init) {
     if (changed['geometry.points'] || changed['line.stroke'] || changed['line.join'] || changed['arrow.start'] || changed['arrow.end']) {
       return this.rebuild();
     }
     if (changed['line.proximity']) {
-      if ((this.proximity != null) !== (this.props.proximity != null)) {
+      if (this.proximity != null !== (this.props.proximity != null)) {
         return this.rebuild();
       }
     }
   };
 
   return Line;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Line;
 
 },{"../../../util":158,"../../primitive":27}],49:[function(require,module,exports){
-var Point, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Point,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Point = (function(superClass) {
+Point = function (superClass) {
   extend(Point, superClass);
 
   Point.traits = ['node', 'object', 'visible', 'style', 'point', 'geometry', 'position', 'bind', 'shade'];
@@ -53565,7 +53851,7 @@ Point = (function(superClass) {
     this.point = null;
   }
 
-  Point.prototype.resize = function() {
+  Point.prototype.resize = function () {
     var depth, dims, height, items, width;
     if (this.bind.points == null) {
       return;
@@ -53575,20 +53861,18 @@ Point = (function(superClass) {
     return this.point.geometry.clip(width, height, depth, items);
   };
 
-  Point.prototype.make = function() {
+  Point.prototype.make = function () {
     var color, depth, dims, fill, height, items, mask, material, optical, pointUniforms, position, shape, size, styleUniforms, uniforms, unitUniforms, width;
-    this._helpers.bind.make([
-      {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }, {
-        to: 'point.sizes',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }, {
+      to: 'point.sizes',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -53633,39 +53917,48 @@ Point = (function(superClass) {
     return this._helpers.object.make([this.point]);
   };
 
-  Point.prototype.made = function() {
+  Point.prototype.made = function () {
     return this.resize();
   };
 
-  Point.prototype.unmake = function() {
+  Point.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this.point = null;
   };
 
-  Point.prototype.change = function(changed, touched, init) {
+  Point.prototype.change = function (changed, touched, init) {
     if (changed['geometry.points'] || changed['point.shape'] || changed['point.fill']) {
       return this.rebuild();
     }
   };
 
   return Point;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Point;
 
 },{"../../../util":158,"../../primitive":27}],50:[function(require,module,exports){
-var Primitive, Strip, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Primitive,
+    Strip,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Strip = (function(superClass) {
+Strip = function (superClass) {
   extend(Strip, superClass);
 
   Strip.traits = ['node', 'object', 'visible', 'style', 'line', 'mesh', 'strip', 'geometry', 'position', 'bind', 'shade'];
@@ -53675,7 +53968,7 @@ Strip = (function(superClass) {
     this.strip = null;
   }
 
-  Strip.prototype.resize = function() {
+  Strip.prototype.resize = function () {
     var depth, dims, height, items, map, width;
     if (this.bind.points == null) {
       return;
@@ -53696,20 +53989,18 @@ Strip = (function(superClass) {
     }
   };
 
-  Strip.prototype.make = function() {
+  Strip.prototype.make = function () {
     var color, depth, dims, faceMaterial, fill, height, items, join, line, lineMaterial, lineUniforms, map, mask, material, objects, position, ref, ref1, shaded, stroke, styleUniforms, swizzle, uniforms, unitUniforms, width, wireUniforms;
-    this._helpers.bind.make([
-      {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }, {
-        to: 'mesh.map',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }, {
+      to: 'mesh.map',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -53776,18 +54067,18 @@ Strip = (function(superClass) {
     return this._helpers.object.make(objects);
   };
 
-  Strip.prototype.made = function() {
+  Strip.prototype.made = function () {
     return this.resize();
   };
 
-  Strip.prototype.unmake = function() {
+  Strip.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this.strip = null;
   };
 
-  Strip.prototype.change = function(changed, touched, init) {
+  Strip.prototype.change = function (changed, touched, init) {
     var fill, lineBias, ref, zBias;
     if (changed['geometry.points'] || touched['mesh']) {
       return this.rebuild();
@@ -53799,21 +54090,30 @@ Strip = (function(superClass) {
   };
 
   return Strip;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Strip;
 
 },{"../../../util":158,"../../primitive":27}],51:[function(require,module,exports){
-var Primitive, Surface, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Primitive,
+    Surface,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Surface = (function(superClass) {
+Surface = function (superClass) {
   extend(Surface, superClass);
 
   Surface.traits = ['node', 'object', 'visible', 'style', 'line', 'mesh', 'geometry', 'surface', 'position', 'grid', 'bind', 'shade'];
@@ -53828,7 +54128,7 @@ Surface = (function(superClass) {
     this.lineX = this.lineY = this.surface = null;
   }
 
-  Surface.prototype.resize = function() {
+  Surface.prototype.resize = function () {
     var depth, dims, height, items, map, width;
     if (this.bind.points == null) {
       return;
@@ -53852,20 +54152,18 @@ Surface = (function(superClass) {
     }
   };
 
-  Surface.prototype.make = function() {
+  Surface.prototype.make = function () {
     var closedX, closedY, color, crossed, depth, dims, faceMaterial, fill, height, items, join, lineMaterial, lineUniforms, lineX, lineY, map, mask, material, objects, position, proximity, ref, ref1, ref2, shaded, stroke, styleUniforms, surfaceUniforms, swizzle, swizzle2, uniforms, unitUniforms, width, wireUniforms, zUnits;
-    this._helpers.bind.make([
-      {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }, {
-        to: 'mesh.map',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }, {
+      to: 'mesh.map',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -53881,7 +54179,7 @@ Surface = (function(superClass) {
     wireUniforms.styleZBias = this._attributes.make(this._types.number());
     this.wireColor = wireUniforms.styleColor.value;
     this.wireZBias = wireUniforms.styleZBias;
-    this.wireScratch = new THREE.Color;
+    this.wireScratch = new THREE.Color();
     dims = this.bind.points.getDimensions();
     width = dims.width, height = dims.height, depth = dims.depth, items = dims.items;
     ref = this.props, shaded = ref.shaded, fill = ref.fill, lineX = ref.lineX, lineY = ref.lineY, closedX = ref.closedX, closedY = ref.closedY, stroke = ref.stroke, join = ref.join, proximity = ref.proximity, crossed = ref.crossed;
@@ -53962,18 +54260,18 @@ Surface = (function(superClass) {
     return this._helpers.object.make(objects);
   };
 
-  Surface.prototype.made = function() {
+  Surface.prototype.made = function () {
     return this.resize();
   };
 
-  Surface.prototype.unmake = function() {
+  Surface.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this.lineX = this.lineY = this.surface = null;
   };
 
-  Surface.prototype.change = function(changed, touched, init) {
+  Surface.prototype.change = function (changed, touched, init) {
     var c, color, fill, lineBias, ref, zBias;
     if (changed['geometry.points'] || changed['mesh.shaded'] || changed['mesh.fill'] || changed['line.stroke'] || changed['line.join'] || touched['grid']) {
       return this.rebuild();
@@ -53992,28 +54290,37 @@ Surface = (function(superClass) {
       }
     }
     if (changed['line.proximity']) {
-      if ((this.proximity != null) !== (this.props.proximity != null)) {
+      if (this.proximity != null !== (this.props.proximity != null)) {
         return this.rebuild();
       }
     }
   };
 
   return Surface;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Surface;
 
 },{"../../../util":158,"../../primitive":27}],52:[function(require,module,exports){
-var Primitive, Ticks, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Primitive,
+    Ticks,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Ticks = (function(superClass) {
+Ticks = function (superClass) {
   extend(Ticks, superClass);
 
   function Ticks() {
@@ -54022,11 +54329,11 @@ Ticks = (function(superClass) {
 
   Ticks.traits = ['node', 'object', 'visible', 'style', 'line', 'ticks', 'geometry', 'position', 'bind', 'shade'];
 
-  Ticks.prototype.init = function() {
+  Ticks.prototype.init = function () {
     return this.tickStrip = this.line = null;
   };
 
-  Ticks.prototype.resize = function() {
+  Ticks.prototype.resize = function () {
     var active, dims, layers, ribbons, strips;
     if (this.bind.points == null) {
       return;
@@ -54040,17 +54347,15 @@ Ticks = (function(superClass) {
     return this.tickStrip.set(0, strips - 1);
   };
 
-  Ticks.prototype.make = function() {
+  Ticks.prototype.make = function () {
     var color, dims, join, layers, lineUniforms, mask, material, p, position, positionUniforms, ref, ref1, ribbons, strips, stroke, styleUniforms, swizzle, swizzle2, uniforms, unitUniforms;
-    this._helpers.bind.make([
-      {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -54100,38 +54405,47 @@ Ticks = (function(superClass) {
     return this._helpers.object.make([this.line]);
   };
 
-  Ticks.prototype.made = function() {
+  Ticks.prototype.made = function () {
     return this.resize();
   };
 
-  Ticks.prototype.unmake = function() {
+  Ticks.prototype.unmake = function () {
     this.line = null;
     this._helpers.visible.unmake();
     return this._helpers.object.unmake();
   };
 
-  Ticks.prototype.change = function(changed, touched, init) {
+  Ticks.prototype.change = function (changed, touched, init) {
     if (changed['geometry.points'] || changed['line.stroke'] || changed['line.join']) {
       return this.rebuild();
     }
   };
 
   return Ticks;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Ticks;
 
 },{"../../../util":158,"../../primitive":27}],53:[function(require,module,exports){
-var Primitive, Util, Vector,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Primitive,
+    Util,
+    Vector,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Vector = (function(superClass) {
+Vector = function (superClass) {
   extend(Vector, superClass);
 
   Vector.traits = ['node', 'object', 'visible', 'style', 'line', 'arrow', 'geometry', 'position', 'bind', 'shade'];
@@ -54141,7 +54455,7 @@ Vector = (function(superClass) {
     this.line = this.arrows = null;
   }
 
-  Vector.prototype.resize = function() {
+  Vector.prototype.resize = function () {
     var arrow, dims, i, layers, len, ref, results, ribbons, samples, strips;
     if (this.bind.points == null) {
       return;
@@ -54161,17 +54475,15 @@ Vector = (function(superClass) {
     return results;
   };
 
-  Vector.prototype.make = function() {
+  Vector.prototype.make = function () {
     var arrowUniforms, color, dims, end, join, layers, lineUniforms, mask, material, position, proximity, ref, ref1, ref2, ribbons, samples, start, strips, stroke, styleUniforms, swizzle, swizzle2, uniforms, unitUniforms;
-    this._helpers.bind.make([
-      {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -54249,42 +54561,48 @@ Vector = (function(superClass) {
     return this._helpers.object.make(this.arrows.concat([this.line]));
   };
 
-  Vector.prototype.made = function() {
+  Vector.prototype.made = function () {
     return this.resize();
   };
 
-  Vector.prototype.unmake = function() {
+  Vector.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this.line = this.arrows = null;
   };
 
-  Vector.prototype.change = function(changed, touched, init) {
+  Vector.prototype.change = function (changed, touched, init) {
     if (changed['geometry.points'] || changed['line.stroke'] || changed['line.join'] || changed['arrow.start'] || changed['arrow.end']) {
       return this.rebuild();
     }
     if (changed['line.proximity']) {
-      if ((this.proximity != null) !== (this.props.proximity != null)) {
+      if (this.proximity != null !== (this.props.proximity != null)) {
         return this.rebuild();
       }
     }
   };
 
   return Vector;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Vector;
 
 },{"../../../util":158,"../../primitive":27}],54:[function(require,module,exports){
-var Util, View, helpers,
-  indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+'use strict';
+
+var Util,
+    View,
+    helpers,
+    indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
 
 Util = require('../../util');
 
 View = require('./view/view');
-
 
 /*
 
@@ -54295,7 +54613,7 @@ Helpers are auto-attached to primitives that have the matching trait
 
 helpers = {
   bind: {
-    make: function(slots) {
+    make: function make(slots) {
       var callback, done, i, isUnique, j, len, len1, multiple, name, optional, s, selector, slot, source, start, to, trait, unique;
       if (this.bind == null) {
         this.bind = {};
@@ -54317,7 +54635,7 @@ helpers = {
           done = false;
           while (!done) {
             start = source = this._attach(selector, trait, callback, this, start, optional, multiple);
-            isUnique = unique && ((source == null) || this.bound.indexOf(source) < 0);
+            isUnique = unique && (source == null || this.bound.indexOf(source) < 0);
             done = multiple || optional || !unique || isUnique;
           }
         }
@@ -54341,7 +54659,7 @@ helpers = {
       }
       return null;
     },
-    unmake: function() {
+    unmake: function unmake() {
       if (!this.bind) {
         return;
       }
@@ -54350,23 +54668,23 @@ helpers = {
     }
   },
   span: {
-    make: function() {
+    make: function make() {
       this.spanView = this._inherit('view');
-      return this._listen('view', 'view.range', (function(_this) {
-        return function() {
+      return this._listen('view', 'view.range', function (_this) {
+        return function () {
           return _this.trigger({
             type: 'span.range'
           });
         };
-      })(this));
+      }(this));
     },
-    unmake: function() {
+    unmake: function unmake() {
       return delete this.spanView;
     },
-    get: (function() {
+    get: function () {
       var def;
       def = new THREE.Vector2(-1, 1);
-      return function(prefix, dimension) {
+      return function (prefix, dimension) {
         var range, ref, ref1;
         range = this._get(prefix + 'span.range');
         if (range != null) {
@@ -54374,16 +54692,16 @@ helpers = {
         }
         return (ref = (ref1 = this.spanView) != null ? ref1.axis(dimension) : void 0) != null ? ref : def;
       };
-    })()
+    }()
   },
   scale: {
-    divide: function(prefix) {
+    divide: function divide(prefix) {
       var divide, factor;
       divide = this._get(prefix + 'scale.divide');
       factor = this._get(prefix + 'scale.factor');
       return Math.round(divide * 2.5 / factor);
     },
-    generate: function(prefix, buffer, min, max) {
+    generate: function generate(prefix, buffer, min, max) {
       var base, divide, end, factor, mode, nice, start, ticks, unit, zero;
       mode = this._get(prefix + 'scale.mode');
       divide = this._get(prefix + 'scale.divide');
@@ -54400,7 +54718,7 @@ helpers = {
     }
   },
   style: {
-    uniforms: function() {
+    uniforms: function uniforms() {
       return {
         styleColor: this.node.attributes['style.color'],
         styleOpacity: this.node.attributes['style.opacity'],
@@ -54410,7 +54728,7 @@ helpers = {
     }
   },
   arrow: {
-    uniforms: function() {
+    uniforms: function uniforms() {
       var end, size, space, start, style;
       start = this.props.start;
       end = this.props.end;
@@ -54427,7 +54745,7 @@ helpers = {
     }
   },
   point: {
-    uniforms: function() {
+    uniforms: function uniforms() {
       return {
         pointSize: this.node.attributes['point.size'],
         pointDepth: this.node.attributes['point.depth']
@@ -54435,7 +54753,7 @@ helpers = {
     }
   },
   line: {
-    uniforms: function() {
+    uniforms: function uniforms() {
       return {
         lineWidth: this.node.attributes['line.width'],
         lineDepth: this.node.attributes['line.depth'],
@@ -54444,12 +54762,12 @@ helpers = {
     }
   },
   surface: {
-    uniforms: function() {
+    uniforms: function uniforms() {
       return {};
     }
   },
   shade: {
-    pipeline: function(shader) {
+    pipeline: function pipeline(shader) {
       var i, pass, ref;
       if (!this._inherit('fragment')) {
         return shader;
@@ -54463,7 +54781,7 @@ helpers = {
       shader.pipe('fragment.map.rgba');
       return shader;
     },
-    map: function(shader) {
+    map: function map(shader) {
       if (!shader) {
         return shader;
       }
@@ -54471,7 +54789,7 @@ helpers = {
     }
   },
   position: {
-    pipeline: function(shader) {
+    pipeline: function pipeline(shader) {
       var i, pass, ref;
       if (!this._inherit('vertex')) {
         return shader;
@@ -54484,32 +54802,32 @@ helpers = {
       }
       return shader;
     },
-    swizzle: function(shader, order) {
+    swizzle: function swizzle(shader, order) {
       if (shader) {
         return this._shaders.shader().pipe(Util.GLSL.swizzleVec4(order)).pipe(shader);
       }
     },
-    swizzle2: function(shader, order1, order2) {
+    swizzle2: function swizzle2(shader, order1, order2) {
       if (shader) {
         return this._shaders.shader().split().pipe(Util.GLSL.swizzleVec4(order1)).next().pipe(Util.GLSL.swizzleVec4(order2)).join().pipe(shader);
       }
     }
   },
   visible: {
-    make: function() {
+    make: function make() {
       var e, onVisible, visible, visibleParent;
       e = {
         type: 'visible.change'
       };
       visible = null;
-      this.setVisible = function(vis) {
+      this.setVisible = function (vis) {
         if (vis != null) {
           visible = vis;
         }
         return onVisible();
       };
-      onVisible = (function(_this) {
-        return function() {
+      onVisible = function (_this) {
+        return function () {
           var last, ref, self;
           last = _this.isVisible;
           self = (ref = visible != null ? visible : _this._get('object.visible')) != null ? ref : true;
@@ -54521,7 +54839,7 @@ helpers = {
             return _this.trigger(e);
           }
         };
-      })(this);
+      }(this);
       visibleParent = this._inherit('visible');
       if (visibleParent) {
         this._listen(visibleParent, 'visible.change', onVisible);
@@ -54531,25 +54849,25 @@ helpers = {
       }
       return onVisible();
     },
-    unmake: function() {
+    unmake: function unmake() {
       return delete this.isVisible;
     }
   },
   active: {
-    make: function() {
+    make: function make() {
       var active, activeParent, e, onActive;
       e = {
         type: 'active.change'
       };
       active = null;
-      this.setActive = function(act) {
+      this.setActive = function (act) {
         if (act != null) {
           active = act;
         }
         return onActive();
       };
-      onActive = (function(_this) {
-        return function() {
+      onActive = function (_this) {
+        return function () {
           var last, ref, self;
           last = _this.isActive;
           self = (ref = active != null ? active : _this._get('entity.active')) != null ? ref : true;
@@ -54561,7 +54879,7 @@ helpers = {
             return _this.trigger(e);
           }
         };
-      })(this);
+      }(this);
       activeParent = this._inherit('active');
       if (activeParent) {
         this._listen(activeParent, 'active.change', onActive);
@@ -54571,17 +54889,17 @@ helpers = {
       }
       return onActive();
     },
-    unmake: function() {
+    unmake: function unmake() {
       return delete this.isActive;
     }
   },
   object: {
-    make: function(objects) {
+    make: function make(objects) {
       var blending, hasStyle, i, last, len, object, objectScene, onChange, onVisible, opacity, ref, zOrder, zTest, zWrite;
       this.objects = objects != null ? objects : [];
-      this.renders = this.objects.reduce((function(a, b) {
+      this.renders = this.objects.reduce(function (a, b) {
         return a.concat(b.renders);
-      }), []);
+      }, []);
       objectScene = this._inherit('scene');
       opacity = blending = zOrder = null;
       hasStyle = indexOf.call(this.traits, 'style') >= 0;
@@ -54596,8 +54914,8 @@ helpers = {
         zWrite = this.props.zWrite;
         zTest = this.props.zTest;
       }
-      onChange = (function(_this) {
-        return function(event) {
+      onChange = function (_this) {
+        return function (event) {
           var changed, refresh;
           changed = event.changed;
           refresh = null;
@@ -54620,10 +54938,10 @@ helpers = {
             return onVisible();
           }
         };
-      })(this);
+      }(this);
       last = null;
-      onVisible = (function(_this) {
-        return function() {
+      onVisible = function (_this) {
+        return function () {
           var i, j, l, len, len1, len2, o, order, ref, ref1, ref2, ref3, results, results1, results2, visible;
           order = zOrder != null ? -zOrder : _this.node.order;
           visible = ((ref = _this.isVisible) != null ? ref : true) && opacity > 0;
@@ -54656,7 +54974,7 @@ helpers = {
             return results2;
           }
         };
-      })(this);
+      }(this);
       this._listen(this.node, 'change:style', onChange);
       this._listen(this.node, 'reindex', onVisible);
       this._listen(this, 'visible.change', onVisible);
@@ -54667,7 +54985,7 @@ helpers = {
       }
       return onVisible();
     },
-    unmake: function(dispose) {
+    unmake: function unmake(dispose) {
       var i, j, len, len1, object, objectScene, ref, ref1, results;
       if (dispose == null) {
         dispose = true;
@@ -54691,7 +55009,7 @@ helpers = {
         return results;
       }
     },
-    mask: function() {
+    mask: function mask() {
       var mask, shader;
       if (!(mask = this._inherit('mask'))) {
         return;
@@ -54700,7 +55018,7 @@ helpers = {
     }
   },
   unit: {
-    make: function() {
+    make: function make() {
       var bottom, focusDepth, handler, pixelRatio, pixelUnit, renderAspect, renderHeight, renderOdd, renderScale, renderScaleInv, renderWidth, root, top, viewHeight, viewWidth, worldUnit, π;
       π = Math.PI;
       this.unitUniforms = {
@@ -54719,8 +55037,8 @@ helpers = {
       };
       top = new THREE.Vector3();
       bottom = new THREE.Vector3();
-      handler = (function(_this) {
-        return function() {
+      handler = function (_this) {
+        return function () {
           var camera, dpr, focus, fov, fovtan, isAbsolute, m, measure, pixel, ref, rscale, scale, size, world;
           if ((size = typeof root !== "undefined" && root !== null ? root.getSize() : void 0) == null) {
             return;
@@ -54731,7 +55049,7 @@ helpers = {
           focus = (ref = _this.props.focus) != null ? ref : _this.inherit('unit').props.focus;
           isAbsolute = scale === null;
           measure = 1;
-          if ((camera = typeof root !== "undefined" && root !== null ? root.getCamera() : void 0)) {
+          if (camera = typeof root !== "undefined" && root !== null ? root.getCamera() : void 0) {
             m = camera.projectionMatrix;
             top.set(0, -.5, 1).applyProjection(m);
             bottom.set(0, .5, 1).applyProjection(m);
@@ -54756,15 +55074,15 @@ helpers = {
           focusDepth.value = focus;
           return renderOdd.value.set(size.renderWidth % 2, size.renderHeight % 2).multiplyScalar(.5);
         };
-      })(this);
+      }(this);
       root = this.is('root') ? this : this._inherit('root');
       this._listen(root, 'root.update', handler);
       return handler();
     },
-    unmake: function() {
+    unmake: function unmake() {
       return delete this.unitUniforms;
     },
-    get: function() {
+    get: function get() {
       var k, ref, u, v;
       u = {};
       ref = this.unitUniforms;
@@ -54774,13 +55092,13 @@ helpers = {
       }
       return u;
     },
-    uniforms: function() {
+    uniforms: function uniforms() {
       return this.unitUniforms;
     }
   }
 };
 
-module.exports = function(object, traits) {
+module.exports = function (object, traits) {
   var h, i, key, len, method, methods, trait;
   h = {};
   for (i = 0, len = traits.length; i < len; i++) {
@@ -54798,6 +55116,8 @@ module.exports = function(object, traits) {
 };
 
 },{"../../util":158,"./view/view":105}],55:[function(require,module,exports){
+'use strict';
+
 var Model;
 
 Model = require('../../model');
@@ -54808,13 +55128,22 @@ exports.Traits = require('./traits');
 exports.Helpers = require('./helpers');
 
 },{"../../model":17,"./classes":35,"./helpers":54,"./traits":90,"./types":98}],56:[function(require,module,exports){
-var Clamp, Operator,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Clamp,
+    Operator,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
-Clamp = (function(superClass) {
+Clamp = function (superClass) {
   extend(Clamp, superClass);
 
   function Clamp() {
@@ -54823,17 +55152,17 @@ Clamp = (function(superClass) {
 
   Clamp.traits = ['node', 'bind', 'operator', 'source', 'index', 'clamp'];
 
-  Clamp.prototype.indexShader = function(shader) {
+  Clamp.prototype.indexShader = function (shader) {
     shader.pipe(this.operator);
     return Clamp.__super__.indexShader.call(this, shader);
   };
 
-  Clamp.prototype.sourceShader = function(shader) {
+  Clamp.prototype.sourceShader = function (shader) {
     shader.pipe(this.operator);
     return Clamp.__super__.sourceShader.call(this, shader);
   };
 
-  Clamp.prototype.make = function() {
+  Clamp.prototype.make = function () {
     var transform, uniforms;
     Clamp.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -54848,11 +55177,11 @@ Clamp = (function(superClass) {
     return this.operator = transform;
   };
 
-  Clamp.prototype.unmake = function() {
+  Clamp.prototype.unmake = function () {
     return Clamp.__super__.unmake.apply(this, arguments);
   };
 
-  Clamp.prototype.resize = function() {
+  Clamp.prototype.resize = function () {
     var dims;
     if (this.bind.source != null) {
       dims = this.bind.source.getActiveDimensions();
@@ -54861,26 +55190,34 @@ Clamp = (function(superClass) {
     return Clamp.__super__.resize.apply(this, arguments);
   };
 
-  Clamp.prototype.change = function(changed, touched, init) {
+  Clamp.prototype.change = function (changed, touched, init) {
     if (touched['operator'] || touched['clamp']) {
       return this.rebuild();
     }
   };
 
   return Clamp;
-
-})(Operator);
+}(Operator);
 
 module.exports = Clamp;
 
 },{"./operator":61}],57:[function(require,module,exports){
-var Grow, Operator,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Grow,
+    Operator,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
-Grow = (function(superClass) {
+Grow = function (superClass) {
   extend(Grow, superClass);
 
   function Grow() {
@@ -54889,11 +55226,11 @@ Grow = (function(superClass) {
 
   Grow.traits = ['node', 'bind', 'operator', 'source', 'index', 'grow'];
 
-  Grow.prototype.sourceShader = function(shader) {
+  Grow.prototype.sourceShader = function (shader) {
     return shader.pipe(this.operator);
   };
 
-  Grow.prototype.make = function() {
+  Grow.prototype.make = function () {
     var transform, uniforms;
     Grow.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -54912,20 +55249,20 @@ Grow = (function(superClass) {
     return this.operator = transform;
   };
 
-  Grow.prototype.unmake = function() {
+  Grow.prototype.unmake = function () {
     return Grow.__super__.unmake.apply(this, arguments);
   };
 
-  Grow.prototype.resize = function() {
+  Grow.prototype.resize = function () {
     this.update();
     return Grow.__super__.resize.apply(this, arguments);
   };
 
-  Grow.prototype.update = function() {
+  Grow.prototype.update = function () {
     var anchor, dims, i, j, key, len, m, order, results;
     dims = this.bind.source.getFutureDimensions();
     order = ['width', 'height', 'depth', 'items'];
-    m = function(d, anchor) {
+    m = function m(d, anchor) {
       return ((d || 1) - 1) * (.5 - anchor * .5);
     };
     results = [];
@@ -54938,7 +55275,7 @@ Grow = (function(superClass) {
     return results;
   };
 
-  Grow.prototype.change = function(changed, touched, init) {
+  Grow.prototype.change = function (changed, touched, init) {
     if (touched['operator']) {
       return this.rebuild();
     }
@@ -54948,20 +55285,28 @@ Grow = (function(superClass) {
   };
 
   return Grow;
-
-})(Operator);
+}(Operator);
 
 module.exports = Grow;
 
 },{"./operator":61}],58:[function(require,module,exports){
-var Join, Operator, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Join,
+    Operator,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
-
 
 /*
 split:
@@ -54970,7 +55315,7 @@ split:
   overlap:     Types.int(0)
  */
 
-Join = (function(superClass) {
+Join = function (superClass) {
   extend(Join, superClass);
 
   function Join() {
@@ -54979,33 +55324,33 @@ Join = (function(superClass) {
 
   Join.traits = ['node', 'bind', 'operator', 'source', 'index', 'join'];
 
-  Join.prototype.indexShader = function(shader) {
+  Join.prototype.indexShader = function (shader) {
     shader.pipe(this.operator);
     return Join.__super__.indexShader.call(this, shader);
   };
 
-  Join.prototype.sourceShader = function(shader) {
+  Join.prototype.sourceShader = function (shader) {
     shader.pipe(this.operator);
     return Join.__super__.sourceShader.call(this, shader);
   };
 
-  Join.prototype.getDimensions = function() {
+  Join.prototype.getDimensions = function () {
     return this._resample(this.bind.source.getDimensions());
   };
 
-  Join.prototype.getActiveDimensions = function() {
+  Join.prototype.getActiveDimensions = function () {
     return this._resample(this.bind.source.getActiveDimensions());
   };
 
-  Join.prototype.getFutureDimensions = function() {
+  Join.prototype.getFutureDimensions = function () {
     return this._resample(this.bind.source.getFutureDimensions());
   };
 
-  Join.prototype.getIndexDimensions = function() {
+  Join.prototype.getIndexDimensions = function () {
     return this._resample(this.bind.source.getIndexDimensions());
   };
 
-  Join.prototype._resample = function(dims) {
+  Join.prototype._resample = function (dims) {
     var axis, dim, i, index, j, labels, len, length, mapped, order, out, overlap, product, ref, set, stride;
     order = this.order;
     axis = this.axis;
@@ -55013,11 +55358,11 @@ Join = (function(superClass) {
     length = this.length;
     stride = this.stride;
     labels = ['width', 'height', 'depth', 'items'];
-    mapped = order.map(function(x) {
+    mapped = order.map(function (x) {
       return labels[x - 1];
     });
     index = order.indexOf(axis);
-    set = (function() {
+    set = function () {
       var j, len, results;
       results = [];
       for (j = 0, len = mapped.length; j < len; j++) {
@@ -55025,7 +55370,7 @@ Join = (function(superClass) {
         results.push(dims[dim]);
       }
       return results;
-    })();
+    }();
     product = ((ref = set[index + 1]) != null ? ref : 1) * stride;
     set.splice(index, 2, product);
     set = set.slice(0, 3);
@@ -55038,7 +55383,7 @@ Join = (function(superClass) {
     return out;
   };
 
-  Join.prototype.make = function() {
+  Join.prototype.make = function () {
     var axis, dims, index, labels, length, major, order, overlap, permute, rest, stride, transform, uniforms;
     Join.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -55101,32 +55446,41 @@ Join = (function(superClass) {
     return this.stride = stride;
   };
 
-  Join.prototype.unmake = function() {
+  Join.prototype.unmake = function () {
     return Join.__super__.unmake.apply(this, arguments);
   };
 
-  Join.prototype.change = function(changed, touched, init) {
+  Join.prototype.change = function (changed, touched, init) {
     if (touched['join'] || touched['operator']) {
       return this.rebuild();
     }
   };
 
   return Join;
-
-})(Operator);
+}(Operator);
 
 module.exports = Join;
 
 },{"../../../util":158,"./operator":61}],59:[function(require,module,exports){
-var Lerp, Operator, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Lerp,
+    Operator,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
 
-Lerp = (function(superClass) {
+Lerp = function (superClass) {
   extend(Lerp, superClass);
 
   function Lerp() {
@@ -55135,32 +55489,32 @@ Lerp = (function(superClass) {
 
   Lerp.traits = ['node', 'bind', 'operator', 'source', 'index', 'lerp', 'sampler:x', 'sampler:y', 'sampler:z', 'sampler:w'];
 
-  Lerp.prototype.indexShader = function(shader) {
+  Lerp.prototype.indexShader = function (shader) {
     shader.pipe(this.indexer);
     return Lerp.__super__.indexShader.call(this, shader);
   };
 
-  Lerp.prototype.sourceShader = function(shader) {
+  Lerp.prototype.sourceShader = function (shader) {
     return shader.pipe(this.operator);
   };
 
-  Lerp.prototype.getDimensions = function() {
+  Lerp.prototype.getDimensions = function () {
     return this._resample(this.bind.source.getDimensions());
   };
 
-  Lerp.prototype.getActiveDimensions = function() {
+  Lerp.prototype.getActiveDimensions = function () {
     return this._resample(this.bind.source.getActiveDimensions());
   };
 
-  Lerp.prototype.getFutureDimensions = function() {
+  Lerp.prototype.getFutureDimensions = function () {
     return this._resample(this.bind.source.getFutureDimensions());
   };
 
-  Lerp.prototype.getIndexDimensions = function() {
+  Lerp.prototype.getIndexDimensions = function () {
     return this._resample(this.bind.source.getIndexDimensions());
   };
 
-  Lerp.prototype._resample = function(dims) {
+  Lerp.prototype._resample = function (dims) {
     var c, p, r;
     r = this.resampled;
     c = this.centered;
@@ -55227,7 +55581,7 @@ Lerp = (function(superClass) {
     return dims;
   };
 
-  Lerp.prototype.make = function() {
+  Lerp.prototype.make = function () {
     var any, centered, depth, height, i, id, indexer, items, j, k, key, len, len1, operator, ref, ref1, ref2, relativeSize, resize, sampler, size, uniforms, vec, width;
     Lerp.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -55266,7 +55620,7 @@ Lerp = (function(superClass) {
     };
     this.resampleFactor = uniforms.resampleFactor;
     this.resampleBias = uniforms.resampleBias;
-    resize = (items != null) || (width != null) || (height != null) || (depth != null);
+    resize = items != null || width != null || height != null || depth != null;
     operator.pipe('resample.padding', uniforms);
     vec = [];
     any = false;
@@ -55309,20 +55663,20 @@ Lerp = (function(superClass) {
     return this.relativeSize = relativeSize;
   };
 
-  Lerp.prototype.unmake = function() {
+  Lerp.prototype.unmake = function () {
     Lerp.__super__.unmake.apply(this, arguments);
     return this.operator = null;
   };
 
-  Lerp.prototype.resize = function() {
+  Lerp.prototype.resize = function () {
     var axis, bd, bh, bi, bw, dims, rd, ref, ref1, ref2, ref3, rh, ri, rw, target;
     if (this.bind.source == null) {
       return;
     }
     dims = this.bind.source.getActiveDimensions();
     target = this.getActiveDimensions();
-    axis = (function(_this) {
-      return function(key) {
+    axis = function (_this) {
+      return function (key) {
         var centered, pad, res;
         centered = _this.centered[key];
         pad = _this.padding[key];
@@ -55330,7 +55684,7 @@ Lerp = (function(superClass) {
         res = centered ? dims[key] / Math.max(1, target[key]) : Math.max(1, dims[key] - 1) / Math.max(1, target[key] - 1);
         return [res, pad];
       };
-    })(this);
+    }(this);
     ref = axis('width'), rw = ref[0], bw = ref[1];
     ref1 = axis('height'), rh = ref1[0], bh = ref1[1];
     ref2 = axis('depth'), rd = ref2[0], bd = ref2[1];
@@ -55340,28 +55694,37 @@ Lerp = (function(superClass) {
     return Lerp.__super__.resize.apply(this, arguments);
   };
 
-  Lerp.prototype.change = function(changed, touched, init) {
+  Lerp.prototype.change = function (changed, touched, init) {
     if (touched['operator'] || touched['lerp'] || touched['sampler']) {
       return this.rebuild();
     }
   };
 
   return Lerp;
-
-})(Operator);
+}(Operator);
 
 module.exports = Lerp;
 
 },{"../../../util":158,"./operator":61}],60:[function(require,module,exports){
-var Memo, Operator, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Memo,
+    Operator,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
 
-Memo = (function(superClass) {
+Memo = function (superClass) {
   extend(Memo, superClass);
 
   function Memo() {
@@ -55370,24 +55733,24 @@ Memo = (function(superClass) {
 
   Memo.traits = ['node', 'bind', 'active', 'operator', 'source', 'index', 'texture', 'memo'];
 
-  Memo.prototype.sourceShader = function(shader) {
+  Memo.prototype.sourceShader = function (shader) {
     return this.memo.shaderAbsolute(shader, 1);
   };
 
-  Memo.prototype.make = function() {
+  Memo.prototype.make = function () {
     var depth, dims, height, items, magFilter, minFilter, operator, ref, type, width;
     Memo.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
       return;
     }
     this._helpers.active.make();
-    this._listen('root', 'root.update', (function(_this) {
-      return function() {
+    this._listen('root', 'root.update', function (_this) {
+      return function () {
         if (_this.isActive) {
           return _this.update();
         }
       };
-    })(this));
+    }(this));
     ref = this.props, minFilter = ref.minFilter, magFilter = ref.magFilter, type = ref.type;
     dims = this.bind.source.getDimensions();
     items = dims.items, width = dims.width, height = dims.height, depth = dims.depth;
@@ -55414,7 +55777,7 @@ Memo = (function(superClass) {
     return this.renders = this.compose.renders;
   };
 
-  Memo.prototype.unmake = function() {
+  Memo.prototype.unmake = function () {
     Memo.__super__.unmake.apply(this, arguments);
     if (this.bind.source != null) {
       this._helpers.active.unmake();
@@ -55424,12 +55787,12 @@ Memo = (function(superClass) {
     }
   };
 
-  Memo.prototype.update = function() {
+  Memo.prototype.update = function () {
     var ref;
     return (ref = this.memo) != null ? ref.render() : void 0;
   };
 
-  Memo.prototype.resize = function() {
+  Memo.prototype.resize = function () {
     var depth, dims, height, width;
     if (this.bind.source == null) {
       return;
@@ -55440,26 +55803,34 @@ Memo = (function(superClass) {
     return Memo.__super__.resize.apply(this, arguments);
   };
 
-  Memo.prototype.change = function(changed, touched, init) {
+  Memo.prototype.change = function (changed, touched, init) {
     if (touched['texture'] || touched['operator']) {
       return this.rebuild();
     }
   };
 
   return Memo;
-
-})(Operator);
+}(Operator);
 
 module.exports = Memo;
 
 },{"../../../util":158,"./operator":61}],61:[function(require,module,exports){
-var Operator, Source,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Source,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Source = require('../base/source');
 
-Operator = (function(superClass) {
+Operator = function (superClass) {
   extend(Operator, superClass);
 
   function Operator() {
@@ -55468,77 +55839,84 @@ Operator = (function(superClass) {
 
   Operator.traits = ['node', 'bind', 'operator', 'source', 'index'];
 
-  Operator.prototype.indexShader = function(shader) {
+  Operator.prototype.indexShader = function (shader) {
     var ref;
     return (ref = this.bind.source) != null ? typeof ref.indexShader === "function" ? ref.indexShader(shader) : void 0 : void 0;
   };
 
-  Operator.prototype.sourceShader = function(shader) {
+  Operator.prototype.sourceShader = function (shader) {
     var ref;
     return (ref = this.bind.source) != null ? typeof ref.sourceShader === "function" ? ref.sourceShader(shader) : void 0 : void 0;
   };
 
-  Operator.prototype.getDimensions = function() {
+  Operator.prototype.getDimensions = function () {
     return this.bind.source.getDimensions();
   };
 
-  Operator.prototype.getFutureDimensions = function() {
+  Operator.prototype.getFutureDimensions = function () {
     return this.bind.source.getFutureDimensions();
   };
 
-  Operator.prototype.getActiveDimensions = function() {
+  Operator.prototype.getActiveDimensions = function () {
     return this.bind.source.getActiveDimensions();
   };
 
-  Operator.prototype.getIndexDimensions = function() {
+  Operator.prototype.getIndexDimensions = function () {
     return this.bind.source.getIndexDimensions();
   };
 
-  Operator.prototype.init = function() {
-    return this.sourceSpec = [
-      {
-        to: 'operator.source',
-        trait: 'source'
-      }
-    ];
+  Operator.prototype.init = function () {
+    return this.sourceSpec = [{
+      to: 'operator.source',
+      trait: 'source'
+    }];
   };
 
-  Operator.prototype.make = function() {
+  Operator.prototype.make = function () {
     Operator.__super__.make.apply(this, arguments);
     return this._helpers.bind.make(this.sourceSpec);
   };
 
-  Operator.prototype.made = function() {
+  Operator.prototype.made = function () {
     this.resize();
     return Operator.__super__.made.apply(this, arguments);
   };
 
-  Operator.prototype.unmake = function() {
+  Operator.prototype.unmake = function () {
     return this._helpers.bind.unmake();
   };
 
-  Operator.prototype.resize = function(rebuild) {
+  Operator.prototype.resize = function (rebuild) {
     return this.trigger({
       type: 'source.resize'
     });
   };
 
   return Operator;
-
-})(Source);
+}(Source);
 
 module.exports = Operator;
 
 },{"../base/source":32}],62:[function(require,module,exports){
-var Primitive, Readback, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Primitive,
+    Readback,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Readback = (function(superClass) {
+Readback = function (superClass) {
   extend(Readback, superClass);
 
   function Readback() {
@@ -55551,50 +55929,48 @@ Readback = (function(superClass) {
     channels: 4
   };
 
-  Readback.prototype.init = function() {
+  Readback.prototype.init = function () {
     this.emitter = this.root = null;
     return this.active = {};
   };
 
-  Readback.prototype.make = function() {
+  Readback.prototype.make = function () {
     var channels, depth, expr, height, items, ref, ref1, sampler, type, width;
     Readback.__super__.make.apply(this, arguments);
-    this._compute('readback.data', (function(_this) {
-      return function() {
+    this._compute('readback.data', function (_this) {
+      return function () {
         var ref;
         return (ref = _this.readback) != null ? ref.data : void 0;
       };
-    })(this));
-    this._compute('readback.items', (function(_this) {
-      return function() {
+    }(this));
+    this._compute('readback.items', function (_this) {
+      return function () {
         var ref;
         return (ref = _this.readback) != null ? ref.items : void 0;
       };
-    })(this));
-    this._compute('readback.width', (function(_this) {
-      return function() {
+    }(this));
+    this._compute('readback.width', function (_this) {
+      return function () {
         var ref;
         return (ref = _this.readback) != null ? ref.width : void 0;
       };
-    })(this));
-    this._compute('readback.height', (function(_this) {
-      return function() {
+    }(this));
+    this._compute('readback.height', function (_this) {
+      return function () {
         var ref;
         return (ref = _this.readback) != null ? ref.height : void 0;
       };
-    })(this));
-    this._compute('readback.depth', (function(_this) {
-      return function() {
+    }(this));
+    this._compute('readback.depth', function (_this) {
+      return function () {
         var ref;
         return (ref = _this.readback) != null ? ref.depth : void 0;
       };
-    })(this));
-    this._helpers.bind.make([
-      {
-        to: 'operator.source',
-        trait: 'source'
-      }
-    ]);
+    }(this));
+    this._helpers.bind.make([{
+      to: 'operator.source',
+      trait: 'source'
+    }]);
     if (this.bind.source == null) {
       return;
     }
@@ -55618,7 +55994,7 @@ Readback = (function(superClass) {
     return this._helpers.active.make();
   };
 
-  Readback.prototype.unmake = function() {
+  Readback.prototype.unmake = function () {
     if (this.readback != null) {
       this.readback.dispose();
       this.readback = null;
@@ -55630,7 +56006,7 @@ Readback = (function(superClass) {
     return this._helpers.bind.unmake();
   };
 
-  Readback.prototype.update = function() {
+  Readback.prototype.update = function () {
     var ref;
     if (this.readback == null) {
       return;
@@ -55644,7 +56020,7 @@ Readback = (function(superClass) {
     }
   };
 
-  Readback.prototype.resize = function() {
+  Readback.prototype.resize = function () {
     var depth, height, items, ref, sI, sJ, sK, width;
     if (this.readback == null) {
       return;
@@ -55656,7 +56032,7 @@ Readback = (function(superClass) {
     return this.strideK = sK = sJ * height;
   };
 
-  Readback.prototype.change = function(changed, touched, init) {
+  Readback.prototype.change = function (changed, touched, init) {
     if (changed['readback.type']) {
       return this.rebuild();
     }
@@ -55666,19 +56042,27 @@ Readback = (function(superClass) {
   };
 
   return Readback;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Readback;
 
 },{"../../../util":158,"../../primitive":27}],63:[function(require,module,exports){
-var Operator, Repeat,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Repeat,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
-Repeat = (function(superClass) {
+Repeat = function (superClass) {
   extend(Repeat, superClass);
 
   function Repeat() {
@@ -55687,33 +56071,33 @@ Repeat = (function(superClass) {
 
   Repeat.traits = ['node', 'bind', 'operator', 'source', 'index', 'repeat'];
 
-  Repeat.prototype.indexShader = function(shader) {
+  Repeat.prototype.indexShader = function (shader) {
     shader.pipe(this.operator);
     return Repeat.__super__.indexShader.call(this, shader);
   };
 
-  Repeat.prototype.sourceShader = function(shader) {
+  Repeat.prototype.sourceShader = function (shader) {
     shader.pipe(this.operator);
     return Repeat.__super__.sourceShader.call(this, shader);
   };
 
-  Repeat.prototype.getDimensions = function() {
+  Repeat.prototype.getDimensions = function () {
     return this._resample(this.bind.source.getDimensions());
   };
 
-  Repeat.prototype.getActiveDimensions = function() {
+  Repeat.prototype.getActiveDimensions = function () {
     return this._resample(this.bind.source.getActiveDimensions());
   };
 
-  Repeat.prototype.getFutureDimensions = function() {
+  Repeat.prototype.getFutureDimensions = function () {
     return this._resample(this.bind.source.getFutureDimensions());
   };
 
-  Repeat.prototype.getIndexDimensions = function() {
+  Repeat.prototype.getIndexDimensions = function () {
     return this._resample(this.bind.source.getIndexDimensions());
   };
 
-  Repeat.prototype._resample = function(dims) {
+  Repeat.prototype._resample = function (dims) {
     var r;
     r = this.resample;
     return {
@@ -55724,7 +56108,7 @@ Repeat = (function(superClass) {
     };
   };
 
-  Repeat.prototype.make = function() {
+  Repeat.prototype.make = function () {
     var transform, uniforms;
     Repeat.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -55740,11 +56124,11 @@ Repeat = (function(superClass) {
     return this.operator = transform;
   };
 
-  Repeat.prototype.unmake = function() {
+  Repeat.prototype.unmake = function () {
     return Repeat.__super__.unmake.apply(this, arguments);
   };
 
-  Repeat.prototype.resize = function() {
+  Repeat.prototype.resize = function () {
     var dims;
     if (this.bind.source != null) {
       dims = this.bind.source.getActiveDimensions();
@@ -55753,7 +56137,7 @@ Repeat = (function(superClass) {
     return Repeat.__super__.resize.apply(this, arguments);
   };
 
-  Repeat.prototype.change = function(changed, touched, init) {
+  Repeat.prototype.change = function (changed, touched, init) {
     var i, key, len, ref, results;
     if (touched['operator'] || touched['repeat']) {
       return this.rebuild();
@@ -55770,21 +56154,30 @@ Repeat = (function(superClass) {
   };
 
   return Repeat;
-
-})(Operator);
+}(Operator);
 
 module.exports = Repeat;
 
 },{"./operator":61}],64:[function(require,module,exports){
-var Operator, Resample, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Resample,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
 
-Resample = (function(superClass) {
+Resample = function (superClass) {
   extend(Resample, superClass);
 
   function Resample() {
@@ -55793,32 +56186,32 @@ Resample = (function(superClass) {
 
   Resample.traits = ['node', 'bind', 'operator', 'source', 'index', 'resample', 'sampler:x', 'sampler:y', 'sampler:z', 'sampler:w', 'include'];
 
-  Resample.prototype.indexShader = function(shader) {
+  Resample.prototype.indexShader = function (shader) {
     shader.pipe(this.indexer);
     return Resample.__super__.indexShader.call(this, shader);
   };
 
-  Resample.prototype.sourceShader = function(shader) {
+  Resample.prototype.sourceShader = function (shader) {
     return shader.pipe(this.operator);
   };
 
-  Resample.prototype.getDimensions = function() {
+  Resample.prototype.getDimensions = function () {
     return this._resample(this.bind.source.getDimensions());
   };
 
-  Resample.prototype.getActiveDimensions = function() {
+  Resample.prototype.getActiveDimensions = function () {
     return this._resample(this.bind.source.getActiveDimensions());
   };
 
-  Resample.prototype.getFutureDimensions = function() {
+  Resample.prototype.getFutureDimensions = function () {
     return this._resample(this.bind.source.getFutureDimensions());
   };
 
-  Resample.prototype.getIndexDimensions = function() {
+  Resample.prototype.getIndexDimensions = function () {
     return this._resample(this.bind.source.getIndexDimensions());
   };
 
-  Resample.prototype._resample = function(dims) {
+  Resample.prototype._resample = function (dims) {
     var c, p, r;
     r = this.resampled;
     c = this.centered;
@@ -55885,19 +56278,17 @@ Resample = (function(superClass) {
     return dims;
   };
 
-  Resample.prototype.make = function() {
+  Resample.prototype.make = function () {
     var any, centered, channels, depth, height, i, indexer, indices, items, j, key, len, operator, ref, ref1, ref2, relativeSample, relativeSize, resize, sample, shader, size, type, uniforms, vec, width;
     Resample.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
       return;
     }
-    this._helpers.bind.make([
-      {
-        to: 'include.shader',
-        trait: 'shader',
-        optional: true
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'include.shader',
+      trait: 'shader',
+      optional: true
+    }]);
     ref = this.props, indices = ref.indices, channels = ref.channels;
     shader = this.bind.shader;
     ref1 = this.props, sample = ref1.sample, size = ref1.size, items = ref1.items, width = ref1.width, height = ref1.height, depth = ref1.depth;
@@ -55943,7 +56334,7 @@ Resample = (function(superClass) {
     this.targetSize = uniforms.targetSize;
     this.resampleFactor = uniforms.resampleFactor;
     this.resampleBias = uniforms.resampleBias;
-    resize = (items != null) || (width != null) || (height != null) || (depth != null);
+    resize = items != null || width != null || height != null || depth != null;
     operator.pipe('resample.padding', uniforms);
     vec = [];
     any = false;
@@ -56007,20 +56398,20 @@ Resample = (function(superClass) {
     return this.relativeSize = relativeSize;
   };
 
-  Resample.prototype.unmake = function() {
+  Resample.prototype.unmake = function () {
     Resample.__super__.unmake.apply(this, arguments);
     return this.operator = null;
   };
 
-  Resample.prototype.resize = function() {
+  Resample.prototype.resize = function () {
     var axis, bd, bh, bi, bw, dims, rd, ref, ref1, ref2, ref3, rh, ri, rw, target;
     if (this.bind.source == null) {
       return;
     }
     dims = this.bind.source.getActiveDimensions();
     target = this.getActiveDimensions();
-    axis = (function(_this) {
-      return function(key) {
+    axis = function (_this) {
+      return function (key) {
         var centered, pad, res;
         centered = _this.centered[key];
         pad = _this.padding[key];
@@ -56028,7 +56419,7 @@ Resample = (function(superClass) {
         res = centered ? dims[key] / Math.max(1, target[key]) : Math.max(1, dims[key] - 1) / Math.max(1, target[key] - 1);
         return [res, pad];
       };
-    })(this);
+    }(this);
     ref = axis('width'), rw = ref[0], bw = ref[1];
     ref1 = axis('height'), rh = ref1[0], bh = ref1[1];
     ref2 = axis('depth'), rd = ref2[0], bd = ref2[1];
@@ -56049,28 +56440,37 @@ Resample = (function(superClass) {
     return Resample.__super__.resize.apply(this, arguments);
   };
 
-  Resample.prototype.change = function(changed, touched, init) {
+  Resample.prototype.change = function (changed, touched, init) {
     if (touched['operator'] || touched['resample'] || touched['sampler'] || touched['include']) {
       return this.rebuild();
     }
   };
 
   return Resample;
-
-})(Operator);
+}(Operator);
 
 module.exports = Resample;
 
 },{"../../../util":158,"./operator":61}],65:[function(require,module,exports){
-var Operator, Slice, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Slice,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
 
-Slice = (function(superClass) {
+Slice = function (superClass) {
   extend(Slice, superClass);
 
   function Slice() {
@@ -56079,35 +56479,35 @@ Slice = (function(superClass) {
 
   Slice.traits = ['node', 'bind', 'operator', 'source', 'index', 'slice'];
 
-  Slice.prototype.getDimensions = function() {
+  Slice.prototype.getDimensions = function () {
     return this._resample(this.bind.source.getDimensions());
   };
 
-  Slice.prototype.getActiveDimensions = function() {
+  Slice.prototype.getActiveDimensions = function () {
     return this._resample(this.bind.source.getActiveDimensions());
   };
 
-  Slice.prototype.getFutureDimensions = function() {
+  Slice.prototype.getFutureDimensions = function () {
     return this._resample(this.bind.source.getFutureDimensions());
   };
 
-  Slice.prototype.getIndexDimensions = function() {
+  Slice.prototype.getIndexDimensions = function () {
     return this._resample(this.bind.source.getIndexDimensions());
   };
 
-  Slice.prototype.sourceShader = function(shader) {
+  Slice.prototype.sourceShader = function (shader) {
     shader.pipe('slice.position', this.uniforms);
     return this.bind.source.sourceShader(shader);
   };
 
-  Slice.prototype._resolve = function(key, dims) {
+  Slice.prototype._resolve = function (key, dims) {
     var dim, end, index, range, start;
     range = this.props[key];
     dim = dims[key];
     if (range == null) {
       return [0, dim];
     }
-    index = function(i, dim) {
+    index = function index(i, dim) {
       if (i < 0) {
         return dim + i;
       } else {
@@ -56120,7 +56520,7 @@ Slice = (function(superClass) {
     return [start, end - start];
   };
 
-  Slice.prototype._resample = function(dims) {
+  Slice.prototype._resample = function (dims) {
     dims.width = this._resolve('width', dims)[1];
     dims.height = this._resolve('height', dims)[1];
     dims.depth = this._resolve('depth', dims)[1];
@@ -56128,7 +56528,7 @@ Slice = (function(superClass) {
     return dims;
   };
 
-  Slice.prototype.make = function() {
+  Slice.prototype.make = function () {
     Slice.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
       return;
@@ -56138,11 +56538,11 @@ Slice = (function(superClass) {
     };
   };
 
-  Slice.prototype.unmake = function() {
+  Slice.prototype.unmake = function () {
     return Slice.__super__.unmake.apply(this, arguments);
   };
 
-  Slice.prototype.resize = function() {
+  Slice.prototype.resize = function () {
     var dims;
     if (this.bind.source == null) {
       return;
@@ -56152,7 +56552,7 @@ Slice = (function(superClass) {
     return Slice.__super__.resize.apply(this, arguments);
   };
 
-  Slice.prototype.change = function(changed, touched, init) {
+  Slice.prototype.change = function (changed, touched, init) {
     if (touched['operator']) {
       return this.rebuild();
     }
@@ -56162,20 +56562,28 @@ Slice = (function(superClass) {
   };
 
   return Slice;
-
-})(Operator);
+}(Operator);
 
 module.exports = Slice;
 
 },{"../../../util":158,"./operator":61}],66:[function(require,module,exports){
-var Operator, Split, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Split,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
-
 
 /*
 split:
@@ -56185,7 +56593,7 @@ split:
   overlap:     Types.int(0)
  */
 
-Split = (function(superClass) {
+Split = function (superClass) {
   extend(Split, superClass);
 
   function Split() {
@@ -56194,33 +56602,33 @@ Split = (function(superClass) {
 
   Split.traits = ['node', 'bind', 'operator', 'source', 'index', 'split'];
 
-  Split.prototype.indexShader = function(shader) {
+  Split.prototype.indexShader = function (shader) {
     shader.pipe(this.operator);
     return Split.__super__.indexShader.call(this, shader);
   };
 
-  Split.prototype.sourceShader = function(shader) {
+  Split.prototype.sourceShader = function (shader) {
     shader.pipe(this.operator);
     return Split.__super__.sourceShader.call(this, shader);
   };
 
-  Split.prototype.getDimensions = function() {
+  Split.prototype.getDimensions = function () {
     return this._resample(this.bind.source.getDimensions());
   };
 
-  Split.prototype.getActiveDimensions = function() {
+  Split.prototype.getActiveDimensions = function () {
     return this._resample(this.bind.source.getActiveDimensions());
   };
 
-  Split.prototype.getFutureDimensions = function() {
+  Split.prototype.getFutureDimensions = function () {
     return this._resample(this.bind.source.getFutureDimensions());
   };
 
-  Split.prototype.getIndexDimensions = function() {
+  Split.prototype.getIndexDimensions = function () {
     return this._resample(this.bind.source.getIndexDimensions());
   };
 
-  Split.prototype._resample = function(dims) {
+  Split.prototype._resample = function (dims) {
     var axis, dim, i, index, j, labels, len, length, mapped, order, out, overlap, remain, set, stride;
     order = this.order;
     axis = this.axis;
@@ -56228,11 +56636,11 @@ Split = (function(superClass) {
     length = this.length;
     stride = this.stride;
     labels = ['width', 'height', 'depth', 'items'];
-    mapped = order.map(function(x) {
+    mapped = order.map(function (x) {
       return labels[x - 1];
     });
     index = order.indexOf(axis);
-    set = (function() {
+    set = function () {
       var j, len, results;
       results = [];
       for (j = 0, len = mapped.length; j < len; j++) {
@@ -56240,7 +56648,7 @@ Split = (function(superClass) {
         results.push(dims[dim]);
       }
       return results;
-    })();
+    }();
     remain = Math.floor((set[index] - overlap) / stride);
     set.splice(index, 1, length, remain);
     set = set.slice(0, 4);
@@ -56252,7 +56660,7 @@ Split = (function(superClass) {
     return out;
   };
 
-  Split.prototype.make = function() {
+  Split.prototype.make = function () {
     var axis, index, length, order, overlap, permute, ref, rest, split, stride, transform, uniforms;
     Split.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -56320,30 +56728,38 @@ Split = (function(superClass) {
     return this.stride = stride;
   };
 
-  Split.prototype.unmake = function() {
+  Split.prototype.unmake = function () {
     return Split.__super__.unmake.apply(this, arguments);
   };
 
-  Split.prototype.change = function(changed, touched, init) {
+  Split.prototype.change = function (changed, touched, init) {
     if (changed['split.axis'] || changed['split.order'] || touched['operator']) {
       return this.rebuild();
     }
   };
 
   return Split;
-
-})(Operator);
+}(Operator);
 
 module.exports = Split;
 
 },{"../../../util":158,"./operator":61}],67:[function(require,module,exports){
-var Operator, Spread,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Spread,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
-Spread = (function(superClass) {
+Spread = function (superClass) {
   extend(Spread, superClass);
 
   function Spread() {
@@ -56352,11 +56768,11 @@ Spread = (function(superClass) {
 
   Spread.traits = ['node', 'bind', 'operator', 'source', 'index', 'spread'];
 
-  Spread.prototype.sourceShader = function(shader) {
+  Spread.prototype.sourceShader = function (shader) {
     return shader.pipe(this.operator);
   };
 
-  Spread.prototype.make = function() {
+  Spread.prototype.make = function () {
     var transform, uniforms;
     Spread.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -56374,16 +56790,16 @@ Spread = (function(superClass) {
     return this.operator = transform;
   };
 
-  Spread.prototype.unmake = function() {
+  Spread.prototype.unmake = function () {
     return Spread.__super__.unmake.apply(this, arguments);
   };
 
-  Spread.prototype.resize = function() {
+  Spread.prototype.resize = function () {
     this.update();
     return Spread.__super__.resize.apply(this, arguments);
   };
 
-  Spread.prototype.update = function() {
+  Spread.prototype.update = function () {
     var align, anchor, d, dims, els, i, j, k, key, len, map, matrix, offset, order, ref, results, spread, unit, unitEnum, v;
     dims = this.bind.source.getFutureDimensions();
     matrix = this.spreadMatrix.value;
@@ -56392,18 +56808,18 @@ Spread = (function(superClass) {
     align = ['alignWidth', 'alignHeight', 'alignDepth', 'alignItems'];
     unit = this.props.unit;
     unitEnum = this.node.attributes['spread.unit']["enum"];
-    map = (function() {
+    map = function () {
       switch (unit) {
         case unitEnum.relative:
-          return function(key, i, k, v) {
+          return function (key, i, k, v) {
             return els[i * 4 + k] = v / Math.max(1, dims[key] - 1);
           };
         case unitEnum.absolute:
-          return function(key, i, k, v) {
+          return function (key, i, k, v) {
             return els[i * 4 + k] = v;
           };
       }
-    })();
+    }();
     results = [];
     for (i = j = 0, len = order.length; j < len; i = ++j) {
       key = order[i];
@@ -56416,7 +56832,7 @@ Spread = (function(superClass) {
         offset = 0;
       }
       this.spreadOffset.value.setComponent(i, offset);
-      results.push((function() {
+      results.push(function () {
         var l, ref1, results1;
         results1 = [];
         for (k = l = 0; l <= 3; k = ++l) {
@@ -56424,12 +56840,12 @@ Spread = (function(superClass) {
           results1.push(els[i * 4 + k] = map(key, i, k, v));
         }
         return results1;
-      })());
+      }());
     }
     return results;
   };
 
-  Spread.prototype.change = function(changed, touched, init) {
+  Spread.prototype.change = function (changed, touched, init) {
     if (touched['operator']) {
       return this.rebuild();
     }
@@ -56439,21 +56855,30 @@ Spread = (function(superClass) {
   };
 
   return Spread;
-
-})(Operator);
+}(Operator);
 
 module.exports = Spread;
 
 },{"./operator":61}],68:[function(require,module,exports){
-var Operator, Subdivide, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Subdivide,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
 
-Subdivide = (function(superClass) {
+Subdivide = function (superClass) {
   extend(Subdivide, superClass);
 
   function Subdivide() {
@@ -56462,32 +56887,32 @@ Subdivide = (function(superClass) {
 
   Subdivide.traits = ['node', 'bind', 'operator', 'source', 'index', 'subdivide'];
 
-  Subdivide.prototype.indexShader = function(shader) {
+  Subdivide.prototype.indexShader = function (shader) {
     shader.pipe(this.indexer);
     return Subdivide.__super__.indexShader.call(this, shader);
   };
 
-  Subdivide.prototype.sourceShader = function(shader) {
+  Subdivide.prototype.sourceShader = function (shader) {
     return shader.pipe(this.operator);
   };
 
-  Subdivide.prototype.getDimensions = function() {
+  Subdivide.prototype.getDimensions = function () {
     return this._resample(this.bind.source.getDimensions());
   };
 
-  Subdivide.prototype.getActiveDimensions = function() {
+  Subdivide.prototype.getActiveDimensions = function () {
     return this._resample(this.bind.source.getActiveDimensions());
   };
 
-  Subdivide.prototype.getFutureDimensions = function() {
+  Subdivide.prototype.getFutureDimensions = function () {
     return this._resample(this.bind.source.getFutureDimensions());
   };
 
-  Subdivide.prototype.getIndexDimensions = function() {
+  Subdivide.prototype.getIndexDimensions = function () {
     return this._resample(this.bind.source.getIndexDimensions());
   };
 
-  Subdivide.prototype._resample = function(dims) {
+  Subdivide.prototype._resample = function (dims) {
     var r;
     r = this.resampled;
     dims.items--;
@@ -56513,7 +56938,7 @@ Subdivide = (function(superClass) {
     return dims;
   };
 
-  Subdivide.prototype.make = function() {
+  Subdivide.prototype.make = function () {
     var depth, height, i, id, indexer, items, j, key, len, lerp, operator, ref, ref1, resize, sampler, size, uniforms, width;
     Subdivide.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -56541,7 +56966,7 @@ Subdivide = (function(superClass) {
     };
     this.resampleFactor = uniforms.resampleFactor;
     this.resampleBias = uniforms.resampleBias;
-    resize = (items != null) || (width != null) || (height != null) || (depth != null);
+    resize = items != null || width != null || height != null || depth != null;
     if (resize) {
       operator.pipe('resample.relative', uniforms);
       indexer.pipe('resample.relative', uniforms);
@@ -56565,19 +56990,19 @@ Subdivide = (function(superClass) {
     return this.indexer = indexer;
   };
 
-  Subdivide.prototype.unmake = function() {
+  Subdivide.prototype.unmake = function () {
     Subdivide.__super__.unmake.apply(this, arguments);
     return this.operator = null;
   };
 
-  Subdivide.prototype.resize = function() {
+  Subdivide.prototype.resize = function () {
     var axis, dims, rd, rh, ri, rw, target;
     if (this.bind.source == null) {
       return;
     }
     dims = this.bind.source.getActiveDimensions();
     target = this.getActiveDimensions();
-    axis = function(key) {
+    axis = function axis(key) {
       return Math.max(1, dims[key] - 1) / Math.max(1, target[key] - 1);
     };
     rw = axis('width');
@@ -56588,28 +57013,37 @@ Subdivide = (function(superClass) {
     return Subdivide.__super__.resize.apply(this, arguments);
   };
 
-  Subdivide.prototype.change = function(changed, touched, init) {
+  Subdivide.prototype.change = function (changed, touched, init) {
     if (touched['operator'] || touched['subdivide']) {
       return this.rebuild();
     }
   };
 
   return Subdivide;
-
-})(Operator);
+}(Operator);
 
 module.exports = Subdivide;
 
 },{"../../../util":158,"./operator":61}],69:[function(require,module,exports){
-var Operator, Swizzle, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Swizzle,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
 Util = require('../../../util');
 
-Swizzle = (function(superClass) {
+Swizzle = function (superClass) {
   extend(Swizzle, superClass);
 
   function Swizzle() {
@@ -56618,7 +57052,7 @@ Swizzle = (function(superClass) {
 
   Swizzle.traits = ['node', 'bind', 'operator', 'source', 'index', 'swizzle'];
 
-  Swizzle.prototype.sourceShader = function(shader) {
+  Swizzle.prototype.sourceShader = function (shader) {
     shader = Swizzle.__super__.sourceShader.call(this, shader);
     if (this.swizzler) {
       shader.pipe(this.swizzler);
@@ -56626,7 +57060,7 @@ Swizzle = (function(superClass) {
     return shader;
   };
 
-  Swizzle.prototype.make = function() {
+  Swizzle.prototype.make = function () {
     var order;
     Swizzle.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -56638,27 +57072,37 @@ Swizzle = (function(superClass) {
     }
   };
 
-  Swizzle.prototype.unmake = function() {
+  Swizzle.prototype.unmake = function () {
     Swizzle.__super__.unmake.apply(this, arguments);
     return this.swizzler = null;
   };
 
-  Swizzle.prototype.change = function(changed, touched, init) {
+  Swizzle.prototype.change = function (changed, touched, init) {
     if (touched['swizzle'] || touched['operator']) {
       return this.rebuild();
     }
   };
 
   return Swizzle;
-
-})(Operator);
+}(Operator);
 
 module.exports = Swizzle;
 
 },{"../../../util":158,"./operator":61}],70:[function(require,module,exports){
-var Operator, Transpose, Util, labels,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Operator,
+    Transpose,
+    Util,
+    labels,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('./operator');
 
@@ -56671,7 +57115,7 @@ labels = {
   4: 'items'
 };
 
-Transpose = (function(superClass) {
+Transpose = function (superClass) {
   extend(Transpose, superClass);
 
   function Transpose() {
@@ -56680,37 +57124,37 @@ Transpose = (function(superClass) {
 
   Transpose.traits = ['node', 'bind', 'operator', 'source', 'index', 'transpose'];
 
-  Transpose.prototype.indexShader = function(shader) {
+  Transpose.prototype.indexShader = function (shader) {
     if (this.swizzler) {
       shader.pipe(this.swizzler);
     }
     return Transpose.__super__.indexShader.call(this, shader);
   };
 
-  Transpose.prototype.sourceShader = function(shader) {
+  Transpose.prototype.sourceShader = function (shader) {
     if (this.swizzler) {
       shader.pipe(this.swizzler);
     }
     return Transpose.__super__.sourceShader.call(this, shader);
   };
 
-  Transpose.prototype.getDimensions = function() {
+  Transpose.prototype.getDimensions = function () {
     return this._remap(this.transpose, this.bind.source.getDimensions());
   };
 
-  Transpose.prototype.getActiveDimensions = function() {
+  Transpose.prototype.getActiveDimensions = function () {
     return this._remap(this.transpose, this.bind.source.getActiveDimensions());
   };
 
-  Transpose.prototype.getFutureDimensions = function() {
+  Transpose.prototype.getFutureDimensions = function () {
     return this._remap(this.transpose, this.bind.source.getFutureDimensions());
   };
 
-  Transpose.prototype.getIndexDimensions = function() {
+  Transpose.prototype.getIndexDimensions = function () {
     return this._remap(this.transpose, this.bind.source.getIndexDimensions());
   };
 
-  Transpose.prototype._remap = function(transpose, dims) {
+  Transpose.prototype._remap = function (transpose, dims) {
     var dst, i, j, out, ref, src;
     out = {};
     for (i = j = 0; j <= 3; i = ++j) {
@@ -56721,7 +57165,7 @@ Transpose = (function(superClass) {
     return out;
   };
 
-  Transpose.prototype.make = function() {
+  Transpose.prototype.make = function () {
     var order;
     Transpose.__super__.make.apply(this, arguments);
     if (this.bind.source == null) {
@@ -56737,33 +57181,42 @@ Transpose = (function(superClass) {
     });
   };
 
-  Transpose.prototype.unmake = function() {
+  Transpose.prototype.unmake = function () {
     Transpose.__super__.unmake.apply(this, arguments);
     return this.swizzler = null;
   };
 
-  Transpose.prototype.change = function(changed, touched, init) {
+  Transpose.prototype.change = function (changed, touched, init) {
     if (touched['transpose'] || touched['operator']) {
       return this.rebuild();
     }
   };
 
   return Transpose;
-
-})(Operator);
+}(Operator);
 
 module.exports = Transpose;
 
 },{"../../../util":158,"./operator":61}],71:[function(require,module,exports){
-var DOM, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var DOM,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-DOM = (function(superClass) {
+DOM = function (superClass) {
   extend(DOM, superClass);
 
   function DOM() {
@@ -56772,24 +57225,22 @@ DOM = (function(superClass) {
 
   DOM.traits = ['node', 'bind', 'object', 'visible', 'overlay', 'dom', 'attach', 'position'];
 
-  DOM.prototype.init = function() {
+  DOM.prototype.init = function () {
     this.emitter = this.root = null;
     return this.active = {};
   };
 
-  DOM.prototype.make = function() {
+  DOM.prototype.make = function () {
     var depth, height, htmlDims, indexer, items, pointDims, position, projection, width;
     DOM.__super__.make.apply(this, arguments);
-    this._helpers.bind.make([
-      {
-        to: 'dom.html',
-        trait: 'html'
-      }, {
-        to: 'dom.points',
-        trait: 'source'
-      }
-    ]);
-    if (!((this.bind.points != null) && (this.bind.html != null))) {
+    this._helpers.bind.make([{
+      to: 'dom.html',
+      trait: 'html'
+    }, {
+      to: 'dom.points',
+      trait: 'source'
+    }]);
+    if (!(this.bind.points != null && this.bind.html != null)) {
       return;
     }
     this.root = this._inherit('root');
@@ -56825,7 +57276,7 @@ DOM = (function(superClass) {
     return this._helpers.visible.make();
   };
 
-  DOM.prototype.unmake = function() {
+  DOM.prototype.unmake = function () {
     if (this.readback != null) {
       this.readback.dispose();
       this.dom.dispose();
@@ -56838,7 +57289,7 @@ DOM = (function(superClass) {
     return this._helpers.visible.unmake();
   };
 
-  DOM.prototype.update = function() {
+  DOM.prototype.update = function () {
     var ref;
     if (this.readback == null) {
       return;
@@ -56850,14 +57301,14 @@ DOM = (function(superClass) {
     }
   };
 
-  DOM.prototype.post = function() {
+  DOM.prototype.post = function () {
     if (this.readback == null) {
       return;
     }
     return this.dom.render(this.isVisible ? this.emitter.nodes() : []);
   };
 
-  DOM.prototype.callback = function(data) {
+  DOM.prototype.callback = function (data) {
     var attr, className, color, colorString, depth, el, f, height, nodes, offset, opacity, outline, pointer, size, snap, strideI, strideJ, strideK, styles, uniforms, width, zIndex, zoom;
     uniforms = this._inherit('unit').getUnitUniforms();
     width = uniforms.viewWidth;
@@ -56879,7 +57330,7 @@ DOM = (function(superClass) {
     className = null;
     strideI = strideJ = strideK = 0;
     colorString = '';
-    f = function(x, y, z, w, i, j, k, l) {
+    f = function f(x, y, z, w, i, j, k, l) {
       var a, alpha, children, clip, flatZ, index, iw, ox, oy, props, ref, s, scale, v, xx, yy;
       index = l + strideI * i + strideJ * j + strideK * k;
       children = data[index];
@@ -56901,7 +57352,7 @@ DOM = (function(superClass) {
       props = {
         className: className,
         style: {
-          transform: "translate3d(" + xx + "px, " + (-yy) + "px, " + (1 - w) + "px) translate(-50%, -50%) scale(" + scale + "," + scale + ")",
+          transform: "translate3d(" + xx + "px, " + -yy + "px, " + (1 - w) + "px) translate(-50%, -50%) scale(" + scale + "," + scale + ")",
           opacity: alpha
         }
       };
@@ -56928,17 +57379,17 @@ DOM = (function(superClass) {
       props.className += ' ' + ((ref = a != null ? a.className : void 0) != null ? ref : 'mathbox-label');
       return nodes.push(el('div', props, children));
     };
-    f.reset = (function(_this) {
-      return function() {
+    f.reset = function (_this) {
+      return function () {
         var c, m, ref;
         nodes = [];
         ref = [_this.strideI, _this.strideJ, _this.strideK], strideI = ref[0], strideJ = ref[1], strideK = ref[2];
         c = color.value;
-        m = function(x) {
+        m = function m(x) {
           return Math.floor(x * 255);
         };
         colorString = c ? "rgb(" + [m(c.x), m(c.y), m(c.z)] + ")" : '';
-        className = "mathbox-outline-" + (Math.round(outline.value));
+        className = "mathbox-outline-" + Math.round(outline.value);
         styles = {};
         if (c) {
           styles.color = colorString;
@@ -56954,14 +57405,14 @@ DOM = (function(superClass) {
           return styles.pointerEvents = 'auto';
         }
       };
-    })(this);
-    f.nodes = function() {
+    }(this);
+    f.nodes = function () {
       return nodes;
     };
     return f;
   };
 
-  DOM.prototype.resize = function() {
+  DOM.prototype.resize = function () {
     var depth, height, htmlDims, items, pointDims, sI, sJ, sK, width;
     if (this.readback == null) {
       return;
@@ -56978,28 +57429,37 @@ DOM = (function(superClass) {
     return this.strideK = sK = sJ * htmlDims.height;
   };
 
-  DOM.prototype.change = function(changed, touched, init) {
+  DOM.prototype.change = function (changed, touched, init) {
     if (changed['dom.html'] || changed['dom.points']) {
       return this.rebuild();
     }
   };
 
   return DOM;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = DOM;
 
 },{"../../../util":158,"../../primitive":27}],72:[function(require,module,exports){
-var HTML, Util, Voxel,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var HTML,
+    Util,
+    Voxel,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Voxel = require('../data/voxel');
 
 Util = require('../../../util');
 
-HTML = (function(superClass) {
+HTML = function (superClass) {
   extend(HTML, superClass);
 
   function HTML() {
@@ -57012,12 +57472,12 @@ HTML = (function(superClass) {
     channels: 1
   };
 
-  HTML.prototype.init = function() {
+  HTML.prototype.init = function () {
     HTML.__super__.init.apply(this, arguments);
     return this.storage = 'pushBuffer';
   };
 
-  HTML.prototype.make = function() {
+  HTML.prototype.make = function () {
     var depth, height, items, ref, width;
     HTML.__super__.make.apply(this, arguments);
     ref = this.getDimensions(), items = ref.items, width = ref.width, height = ref.height, depth = ref.depth;
@@ -57025,7 +57485,7 @@ HTML = (function(superClass) {
     return this.dom.hint(items * width * height * depth);
   };
 
-  HTML.prototype.unmake = function() {
+  HTML.prototype.unmake = function () {
     HTML.__super__.unmake.apply(this, arguments);
     if (this.dom != null) {
       this.dom.dispose();
@@ -57033,51 +57493,59 @@ HTML = (function(superClass) {
     }
   };
 
-  HTML.prototype.update = function() {
+  HTML.prototype.update = function () {
     return HTML.__super__.update.apply(this, arguments);
   };
 
-  HTML.prototype.change = function(changed, touched, init) {
+  HTML.prototype.change = function (changed, touched, init) {
     if (touched['html']) {
       return this.rebuild();
     }
     return HTML.__super__.change.call(this, changed, touched, init);
   };
 
-  HTML.prototype.nodes = function() {
+  HTML.prototype.nodes = function () {
     return this.buffer.read();
   };
 
-  HTML.prototype.callback = function(callback) {
+  HTML.prototype.callback = function (callback) {
     var el;
     el = this.dom.el;
     if (callback.length <= 6) {
-      return function(emit, i, j, k, l) {
+      return function (emit, i, j, k, l) {
         return callback(emit, el, i, j, k, l);
       };
     } else {
-      return (function(_this) {
-        return function(emit, i, j, k, l) {
+      return function (_this) {
+        return function (emit, i, j, k, l) {
           return callback(emit, el, i, j, k, l, _this.bufferClock, _this.bufferStep);
         };
-      })(this);
+      }(this);
     }
   };
 
   return HTML;
-
-})(Voxel);
+}(Voxel);
 
 module.exports = HTML;
 
 },{"../../../util":158,"../data/voxel":44}],73:[function(require,module,exports){
-var Move, Transition,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Move,
+    Transition,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transition = require('./transition');
 
-Move = (function(superClass) {
+Move = function (superClass) {
   extend(Move, superClass);
 
   function Move() {
@@ -57086,7 +57554,7 @@ Move = (function(superClass) {
 
   Move.traits = ['node', 'transition', 'vertex', 'move', 'visible', 'active'];
 
-  Move.prototype.make = function() {
+  Move.prototype.make = function () {
     var k, ref, v;
     Move.__super__.make.apply(this, arguments);
     ref = {
@@ -57099,7 +57567,7 @@ Move = (function(superClass) {
     }
   };
 
-  Move.prototype.vertex = function(shader, pass) {
+  Move.prototype.vertex = function (shader, pass) {
     var ref, ref1;
     if (pass === this.props.pass) {
       shader.pipe('move.position', this.uniforms);
@@ -57108,19 +57576,27 @@ Move = (function(superClass) {
   };
 
   return Move;
-
-})(Transition);
+}(Transition);
 
 module.exports = Move;
 
 },{"./transition":80}],74:[function(require,module,exports){
-var Play, Track,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Play,
+    Track,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Track = require('./track');
 
-Play = (function(superClass) {
+Play = function (superClass) {
   extend(Play, superClass);
 
   function Play() {
@@ -57129,13 +57605,13 @@ Play = (function(superClass) {
 
   Play.traits = ['node', 'track', 'trigger', 'play', 'bind'];
 
-  Play.prototype.init = function() {
+  Play.prototype.init = function () {
     Play.__super__.init.apply(this, arguments);
     this.skew = null;
     return this.start = null;
   };
 
-  Play.prototype.reset = function(go) {
+  Play.prototype.reset = function (go) {
     if (go == null) {
       go = true;
     }
@@ -57143,27 +57619,27 @@ Play = (function(superClass) {
     return this.start = null;
   };
 
-  Play.prototype.make = function() {
+  Play.prototype.make = function () {
     var parentClock;
     Play.__super__.make.apply(this, arguments);
-    this._listen('slide', 'slide.step', (function(_this) {
-      return function(e) {
+    this._listen('slide', 'slide.step', function (_this) {
+      return function (e) {
         var trigger;
         trigger = _this.props.trigger;
-        if ((trigger != null) && e.index === trigger) {
+        if (trigger != null && e.index === trigger) {
           return _this.reset();
         }
-        if ((trigger != null) && e.index === 0) {
+        if (trigger != null && e.index === 0) {
           return _this.reset(false);
         }
       };
-    })(this));
-    if (!this.props.trigger || (this._inherit('slide') == null)) {
+    }(this));
+    if (!this.props.trigger || this._inherit('slide') == null) {
       this.reset();
     }
     parentClock = this._inherit('clock');
-    return this._listen(parentClock, 'clock.tick', (function(_this) {
-      return function() {
+    return this._listen(parentClock, 'clock.tick', function (_this) {
+      return function () {
         var delay, delta, from, now, offset, pace, ratio, realtime, ref, speed, time, to;
         ref = _this.props, from = ref.from, to = ref.to, speed = ref.speed, pace = ref.pace, delay = ref.delay, realtime = ref.realtime;
         time = parentClock.getTime();
@@ -57185,14 +57661,14 @@ Play = (function(superClass) {
         }
         return _this.update();
       };
-    })(this));
+    }(this));
   };
 
-  Play.prototype.update = function() {
+  Play.prototype.update = function () {
     return Play.__super__.update.apply(this, arguments);
   };
 
-  Play.prototype.change = function(changed, touched, init) {
+  Play.prototype.change = function (changed, touched, init) {
     if (changed['trigger.trigger'] || changed['play.realtime']) {
       return this.rebuild();
     }
@@ -57200,21 +57676,30 @@ Play = (function(superClass) {
   };
 
   return Play;
-
-})(Track);
+}(Track);
 
 module.exports = Play;
 
 },{"./track":79}],75:[function(require,module,exports){
-var Parent, Present, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    Present,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
 Util = require('../../../util');
 
-Present = (function(superClass) {
+Present = function (superClass) {
   extend(Present, superClass);
 
   function Present() {
@@ -57223,9 +57708,9 @@ Present = (function(superClass) {
 
   Present.traits = ['node', 'present'];
 
-  Present.prototype.init = function() {};
+  Present.prototype.init = function () {};
 
-  Present.prototype.make = function() {
+  Present.prototype.make = function () {
     this.nodes = [];
     this.steps = [];
     this.length = 0;
@@ -57233,14 +57718,14 @@ Present = (function(superClass) {
     this.index = 0;
     this.dirty = [];
     this._listen('root', 'root.update', this.update);
-    return this._compute('present.length', (function(_this) {
-      return function() {
+    return this._compute('present.length', function (_this) {
+      return function () {
         return _this.length;
       };
-    })(this));
+    }(this));
   };
 
-  Present.prototype.adopt = function(controller) {
+  Present.prototype.adopt = function (controller) {
     var node;
     node = controller.node;
     if (this.nodes.indexOf(controller) < 0) {
@@ -57249,16 +57734,16 @@ Present = (function(superClass) {
     return this.dirty.push(controller);
   };
 
-  Present.prototype.unadopt = function(controller) {
+  Present.prototype.unadopt = function (controller) {
     var node;
     node = controller.node;
-    this.nodes = this.nodes.filter(function(x) {
+    this.nodes = this.nodes.filter(function (x) {
       return x !== controller;
     });
     return this.dirty.push(controller);
   };
 
-  Present.prototype.update = function() {
+  Present.prototype.update = function () {
     var controller, j, len, ref1, ref2;
     if (!this.dirty.length) {
       return;
@@ -57275,29 +57760,29 @@ Present = (function(superClass) {
     return this.dirty = [];
   };
 
-  Present.prototype.slideLatch = function(controller, enabled, step) {
+  Present.prototype.slideLatch = function (controller, enabled, step) {
     return controller.slideLatch(enabled, step);
   };
 
-  Present.prototype.slideStep = function(controller, index, step) {
+  Present.prototype.slideStep = function (controller, index, step) {
     return controller.slideStep(this.mapIndex(controller, index), step);
   };
 
-  Present.prototype.slideRelease = function(controller, step) {
+  Present.prototype.slideRelease = function (controller, step) {
     return controller.slideRelease();
   };
 
-  Present.prototype.slideReset = function(controller) {
+  Present.prototype.slideReset = function (controller) {
     return controller.slideReset();
   };
 
-  Present.prototype.mapIndex = function(controller, index) {
+  Present.prototype.mapIndex = function (controller, index) {
     return index - this.indices[controller.node._id];
   };
 
-  Present.prototype.process = function(nodes) {
+  Present.prototype.process = function (nodes) {
     var dedupe, expand, finalize, isSibling, isSlide, order, parents, paths, slides, split, steps, traverse;
-    slides = function(nodes) {
+    slides = function slides(nodes) {
       var el, j, len, results;
       results = [];
       for (j = 0, len = nodes.length; j < len; j++) {
@@ -57306,8 +57791,8 @@ Present = (function(superClass) {
       }
       return results;
     };
-    traverse = function(map) {
-      return function(el) {
+    traverse = function traverse(map) {
+      return function (el) {
         var ref, ref1, results;
         results = [];
         while (el && (ref1 = [map(el), el], el = ref1[0], ref = ref1[1], ref1)) {
@@ -57316,17 +57801,17 @@ Present = (function(superClass) {
         return results;
       };
     };
-    parents = traverse(function(el) {
+    parents = traverse(function (el) {
       if (el.parent.traits.hash.present) {
         return null;
       } else {
         return el.parent;
       }
     });
-    isSlide = function(el) {
+    isSlide = function isSlide(el) {
       return nodes.indexOf(el) >= 0;
     };
-    isSibling = function(a, b) {
+    isSibling = function isSibling(a, b) {
       var c, d, e, i, j, ref1;
       c = a.length;
       d = b.length;
@@ -57342,8 +57827,8 @@ Present = (function(superClass) {
       }
       return true;
     };
-    order = function(paths) {
-      return paths.sort(function(a, b) {
+    order = function order(paths) {
+      return paths.sort(function (a, b) {
         var c, d, e, f, g, i, j, nodeA, nodeB, ref1;
         c = a.length;
         d = b.length;
@@ -57353,8 +57838,8 @@ Present = (function(superClass) {
           nodeB = b[d - i];
           f = nodeA.props.order;
           g = nodeB.props.order;
-          if ((f != null) || (g != null)) {
-            if ((f != null) && (g != null) && ((e = f - g) !== 0)) {
+          if (f != null || g != null) {
+            if (f != null && g != null && (e = f - g) !== 0) {
               return e;
             }
             if (f != null) {
@@ -57375,7 +57860,7 @@ Present = (function(superClass) {
         return 0;
       });
     };
-    split = function(steps) {
+    split = function split(steps) {
       var absolute, j, len, node, relative, step;
       relative = [];
       absolute = [];
@@ -57385,13 +57870,13 @@ Present = (function(superClass) {
       }
       return [relative, absolute];
     };
-    expand = function(lists) {
+    expand = function expand(lists) {
       var absolute, i, indices, j, k, len, len1, limit, relative, slide, step, steps;
       relative = lists[0], absolute = lists[1];
       limit = 100;
       indices = {};
       steps = [];
-      slide = function(step, index) {
+      slide = function slide(step, index) {
         var childIndex, from, i, j, name, node, parent, parentIndex, props, ref1, ref2, to;
         props = (node = step[0]).props;
         parent = step[1];
@@ -57418,7 +57903,7 @@ Present = (function(superClass) {
         step = absolute[k];
         slide(step, 0);
       }
-      steps = (function() {
+      steps = function () {
         var l, len2, results;
         results = [];
         for (l = 0, len2 = steps.length; l < len2; l++) {
@@ -57426,10 +57911,10 @@ Present = (function(superClass) {
           results.push(finalize(dedupe(step)));
         }
         return results;
-      })();
+      }();
       return [steps, indices];
     };
-    dedupe = function(step) {
+    dedupe = function dedupe(step) {
       var i, j, len, node, results;
       if (step) {
         results = [];
@@ -57444,8 +57929,8 @@ Present = (function(superClass) {
         return [];
       }
     };
-    finalize = function(step) {
-      return step.sort(function(a, b) {
+    finalize = function finalize(step) {
+      return step.sort(function (a, b) {
         return a.order - b.order;
       });
     };
@@ -57454,14 +57939,14 @@ Present = (function(superClass) {
     return expand(split(steps));
   };
 
-  Present.prototype.go = function(index) {
+  Present.prototype.go = function (index) {
     var active, ascend, descend, enter, exit, j, k, l, last, len, len1, len2, len3, len4, len5, len6, len7, len8, m, n, node, o, p, q, r, ref1, ref2, ref3, ref4, ref5, ref6, ref7, stay, step, toStr;
     index = Math.max(0, Math.min(this.length + 1, +index || 0));
     last = this.last;
     active = (ref1 = this.steps[index - 1]) != null ? ref1 : [];
     step = this.props.directed ? index - this.index : 1;
     this.index = index;
-    enter = (function() {
+    enter = function () {
       var j, len, results;
       results = [];
       for (j = 0, len = active.length; j < len; j++) {
@@ -57471,8 +57956,8 @@ Present = (function(superClass) {
         }
       }
       return results;
-    }).call(this);
-    exit = (function() {
+    }.call(this);
+    exit = function () {
       var j, len, ref2, results;
       ref2 = this.last;
       results = [];
@@ -57483,8 +57968,8 @@ Present = (function(superClass) {
         }
       }
       return results;
-    }).call(this);
-    stay = (function() {
+    }.call(this);
+    stay = function () {
       var j, len, results;
       results = [];
       for (j = 0, len = active.length; j < len; j++) {
@@ -57494,18 +57979,18 @@ Present = (function(superClass) {
         }
       }
       return results;
-    })();
-    ascend = function(nodes) {
-      return nodes.sort(function(a, b) {
+    }();
+    ascend = function ascend(nodes) {
+      return nodes.sort(function (a, b) {
         return a.order - b.order;
       });
     };
-    descend = function(nodes) {
-      return nodes.sort(function(a, b) {
+    descend = function descend(nodes) {
+      return nodes.sort(function (a, b) {
         return b.order - a.order;
       });
     };
-    toStr = function(x) {
+    toStr = function toStr(x) {
       return x.toString();
     };
     ref2 = ascend(enter);
@@ -57553,28 +58038,37 @@ Present = (function(superClass) {
     this.last = active;
   };
 
-  Present.prototype.change = function(changed, touched, init) {
+  Present.prototype.change = function (changed, touched, init) {
     if (changed['present.index'] || init) {
       return this.go(this.props.index);
     }
   };
 
   return Present;
-
-})(Parent);
+}(Parent);
 
 module.exports = Present;
 
 },{"../../../util":158,"../base/parent":30}],76:[function(require,module,exports){
-var Reveal, Transition, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Reveal,
+    Transition,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transition = require('./transition');
 
 Util = require('../../../util');
 
-Reveal = (function(superClass) {
+Reveal = function (superClass) {
   extend(Reveal, superClass);
 
   function Reveal() {
@@ -57583,7 +58077,7 @@ Reveal = (function(superClass) {
 
   Reveal.traits = ['node', 'transition', 'mask', 'visible', 'active'];
 
-  Reveal.prototype.mask = function(shader) {
+  Reveal.prototype.mask = function (shader) {
     var ref, ref1, s;
     if (shader) {
       s = this._shaders.shader();
@@ -57602,19 +58096,27 @@ Reveal = (function(superClass) {
   };
 
   return Reveal;
-
-})(Transition);
+}(Transition);
 
 module.exports = Reveal;
 
 },{"../../../util":158,"./transition":80}],77:[function(require,module,exports){
-var Parent, Slide,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    Slide,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
-Slide = (function(superClass) {
+Slide = function (superClass) {
   extend(Slide, superClass);
 
   function Slide() {
@@ -57623,28 +58125,28 @@ Slide = (function(superClass) {
 
   Slide.traits = ['node', 'slide', 'visible', 'active'];
 
-  Slide.prototype.make = function() {
+  Slide.prototype.make = function () {
     this._helpers.visible.make();
     this._helpers.active.make();
     if (!this._inherit('present')) {
-      throw new Error((this.node.toString()) + " must be placed inside <present></present>");
+      throw new Error(this.node.toString() + " must be placed inside <present></present>");
     }
     return this._inherit('present').adopt(this);
   };
 
-  Slide.prototype.unmake = function() {
+  Slide.prototype.unmake = function () {
     this._helpers.visible.unmake();
     this._helpers.active.unmake();
     return this._inherit('present')(unadopt(this));
   };
 
-  Slide.prototype.change = function(changed, touched, init) {
+  Slide.prototype.change = function (changed, touched, init) {
     if (changed['slide.early'] || changed['slide.late'] || changed['slide.steps'] || changed['slide.from'] || changed['slide.to']) {
       return this.rebuild();
     }
   };
 
-  Slide.prototype.slideLatch = function(enabled, step) {
+  Slide.prototype.slideLatch = function (enabled, step) {
     this.trigger({
       'type': 'transition.latch',
       'step': step
@@ -57654,7 +58156,7 @@ Slide = (function(superClass) {
     }
   };
 
-  Slide.prototype.slideStep = function(index, step) {
+  Slide.prototype.slideStep = function (index, step) {
     return this.trigger({
       'type': 'slide.step',
       'index': index,
@@ -57662,38 +58164,46 @@ Slide = (function(superClass) {
     });
   };
 
-  Slide.prototype.slideRelease = function() {
+  Slide.prototype.slideRelease = function () {
     return this.trigger({
       'type': 'transition.release'
     });
   };
 
-  Slide.prototype.slideReset = function() {
+  Slide.prototype.slideReset = function () {
     this._instant(false);
     return this.trigger({
       'type': 'slide.reset'
     });
   };
 
-  Slide.prototype._instant = function(enabled) {
+  Slide.prototype._instant = function (enabled) {
     this.setVisible(enabled);
     return this.setActive(enabled);
   };
 
   return Slide;
-
-})(Parent);
+}(Parent);
 
 module.exports = Slide;
 
 },{"../base/parent":30}],78:[function(require,module,exports){
-var Step, Track,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Step,
+    Track,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Track = require('./track');
 
-Step = (function(superClass) {
+Step = function (superClass) {
   extend(Step, superClass);
 
   function Step() {
@@ -57702,7 +58212,7 @@ Step = (function(superClass) {
 
   Step.traits = ['node', 'track', 'step', 'trigger', 'bind'];
 
-  Step.prototype.make = function() {
+  Step.prototype.make = function () {
     var clock, j, ref, ref1, results;
     Step.__super__.make.apply(this, arguments);
     clock = this._inherit('clock');
@@ -57712,11 +58222,11 @@ Step = (function(superClass) {
     this.animateIndex = this._animator.make(this._types.number(0), {
       clock: clock,
       realtime: this.props.realtime,
-      step: (function(_this) {
-        return function(value) {
+      step: function (_this) {
+        return function (value) {
           return _this.actualIndex = value;
         };
-      })(this)
+      }(this)
     });
     if (this.lastIndex == null) {
       this.lastIndex = null;
@@ -57724,31 +58234,33 @@ Step = (function(superClass) {
     this.animateStep = this._animator.make(this._types.number(0), {
       clock: clock,
       realtime: this.props.realtime,
-      step: (function(_this) {
-        return function(value) {
+      step: function (_this) {
+        return function (value) {
           _this.playhead = value;
           return _this.update();
         };
-      })(this)
+      }(this)
     });
-    this.stops = (ref = this.props.stops) != null ? ref : (function() {
+    this.stops = (ref = this.props.stops) != null ? ref : function () {
       results = [];
-      for (var j = 0, ref1 = this.script.length; 0 <= ref1 ? j < ref1 : j > ref1; 0 <= ref1 ? j++ : j--){ results.push(j); }
+      for (var j = 0, ref1 = this.script.length; 0 <= ref1 ? j < ref1 : j > ref1; 0 <= ref1 ? j++ : j--) {
+        results.push(j);
+      }
       return results;
-    }).apply(this);
-    this._listen('slide', 'slide.reset', (function(_this) {
-      return function(e) {
+    }.apply(this);
+    this._listen('slide', 'slide.reset', function (_this) {
+      return function (e) {
         return _this.lastIndex = null;
       };
-    })(this));
-    return this._listen('slide', 'slide.step', (function(_this) {
-      return function(e) {
+    }(this));
+    return this._listen('slide', 'slide.step', function (_this) {
+      return function (e) {
         var delay, duration, factor, free, from, i, k, last, len, pace, playback, ref2, ref3, ref4, rewind, skip, skips, speed, step, stop, to, trigger;
         ref2 = _this.props, delay = ref2.delay, duration = ref2.duration, pace = ref2.pace, speed = ref2.speed, playback = ref2.playback, rewind = ref2.rewind, skip = ref2.skip, trigger = ref2.trigger;
         i = Math.max(0, Math.min(_this.stops.length - 1, e.index - trigger));
         from = _this.playhead;
         to = _this.stops[i];
-        if ((_this.lastIndex == null) && trigger) {
+        if (_this.lastIndex == null && trigger) {
           _this.lastIndex = i;
           _this.animateStep.set(to);
           _this.animateIndex.set(i);
@@ -57783,21 +58295,21 @@ Step = (function(superClass) {
           });
         }
       };
-    })(this));
+    }(this));
   };
 
-  Step.prototype.made = function() {
+  Step.prototype.made = function () {
     return this.update();
   };
 
-  Step.prototype.unmake = function() {
+  Step.prototype.unmake = function () {
     this.animateIndex.dispose();
     this.animateStep.dispose();
     this.animateIndex = this.animateStep = null;
     return Step.__super__.unmake.apply(this, arguments);
   };
 
-  Step.prototype.change = function(changed, touched, init) {
+  Step.prototype.change = function (changed, touched, init) {
     if (changed['step.stops'] || changed['step.realtime']) {
       return this.rebuild();
     }
@@ -57805,29 +58317,41 @@ Step = (function(superClass) {
   };
 
   return Step;
-
-})(Track);
+}(Track);
 
 module.exports = Step;
 
 },{"./track":79}],79:[function(require,module,exports){
-var Ease, Primitive, Track, deepCopy,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+var Ease,
+    Primitive,
+    Track,
+    _deepCopy,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Ease = require('../../../util').Ease;
 
-deepCopy = function(x) {
+_deepCopy = function deepCopy(x) {
   var k, out, v;
   out = {};
   for (k in x) {
     v = x[k];
     if (v instanceof Array) {
       out[k] = v.slice();
-    } else if ((v != null) && typeof v === 'object') {
-      out[k] = deepCopy(v);
+    } else if (v != null && (typeof v === 'undefined' ? 'undefined' : _typeof(v)) === 'object') {
+      out[k] = _deepCopy(v);
     } else {
       out[k] = v;
     }
@@ -57835,7 +58359,7 @@ deepCopy = function(x) {
   return out;
 };
 
-Track = (function(superClass) {
+Track = function (superClass) {
   extend(Track, superClass);
 
   function Track() {
@@ -57844,7 +58368,7 @@ Track = (function(superClass) {
 
   Track.traits = ['node', 'track', 'seek', 'bind'];
 
-  Track.prototype.init = function() {
+  Track.prototype.init = function () {
     this.handlers = {};
     this.script = null;
     this.values = null;
@@ -57854,39 +58378,37 @@ Track = (function(superClass) {
     return this.expr = null;
   };
 
-  Track.prototype.make = function() {
+  Track.prototype.make = function () {
     var node, ref, script;
-    this._helpers.bind.make([
-      {
-        to: 'track.target',
-        trait: 'node',
-        callback: null
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'track.target',
+      trait: 'node',
+      callback: null
+    }]);
     script = this.props.script;
     node = this.bind.target.node;
     this.targetNode = node;
     return ref = this._process(node, script), this.script = ref[0], this.values = ref[1], this.start = ref[2], this.end = ref[3], ref;
   };
 
-  Track.prototype.unmake = function() {
+  Track.prototype.unmake = function () {
     this.unbindExpr();
     this._helpers.bind.unmake();
     this.script = this.values = this.start = this.end = this.section = this.expr = null;
     return this.playhead = 0;
   };
 
-  Track.prototype.bindExpr = function(expr) {
+  Track.prototype.bindExpr = function (expr) {
     var clock;
     this.unbindExpr();
     this.expr = expr;
     this.targetNode.bind(expr, true);
     clock = this.targetNode.clock;
-    return this._attributes.bind(this.measure = (function() {
+    return this._attributes.bind(this.measure = function () {
       var playhead;
       playhead = null;
-      return (function(_this) {
-        return function() {
+      return function (_this) {
+        return function () {
           var step;
           step = clock.getTime().step;
           if (playhead != null) {
@@ -57894,11 +58416,11 @@ Track = (function(superClass) {
           }
           return playhead = _this.playhead;
         };
-      })(this);
-    })());
+      }(this);
+    }());
   };
 
-  Track.prototype.unbindExpr = function() {
+  Track.prototype.unbindExpr = function () {
     if (this.expr != null) {
       this.targetNode.unbind(this.expr, true);
     }
@@ -57908,7 +58430,7 @@ Track = (function(superClass) {
     return this.expr = this.measure = null;
   };
 
-  Track.prototype._process = function(object, script) {
+  Track.prototype._process = function (object, script) {
     var end, i, j, k, key, l, last, len, len1, message, props, ref, ref1, ref2, result, s, start, step, v, values;
     if (script instanceof Array) {
       s = {};
@@ -57927,16 +58449,16 @@ Track = (function(superClass) {
       if (step instanceof Array) {
         step = {
           key: +key,
-          props: step[0] != null ? deepCopy(step[0]) : {},
-          expr: step[1] != null ? deepCopy(step[1]) : {}
+          props: step[0] != null ? _deepCopy(step[0]) : {},
+          expr: step[1] != null ? _deepCopy(step[1]) : {}
         };
       } else {
-        if ((step.key == null) && !step.props && !step.expr) {
+        if (step.key == null && !step.props && !step.expr) {
           step = {
-            props: deepCopy(step)
+            props: _deepCopy(step)
           };
         } else {
-          step = deepCopy(step);
+          step = _deepCopy(step);
         }
         step.key = step.key != null ? +step.key : +key;
         if (step.props == null) {
@@ -57952,7 +58474,7 @@ Track = (function(superClass) {
     if (!script.length) {
       return [[], {}, 0, 0];
     }
-    script.sort(function(a, b) {
+    script.sort(function (a, b) {
       return a.key - b.key;
     });
     start = script[0].key;
@@ -57993,7 +58515,7 @@ Track = (function(superClass) {
       }
     } catch (_error) {
       console.warn(this.node.toMarkup());
-      message = (this.node.toString()) + " - Target " + object + " has no `" + k + "` property";
+      message = this.node.toString() + " - Target " + object + " has no `" + k + "` property";
       throw new Error(message);
     }
     result = [];
@@ -58003,9 +58525,9 @@ Track = (function(superClass) {
         v = props[k];
         v = object.validate(k, (ref2 = step.props[k]) != null ? ref2 : v);
         props[k] = step.props[k] = v;
-        if ((step.expr[k] != null) && typeof step.expr[k] !== 'function') {
+        if (step.expr[k] != null && typeof step.expr[k] !== 'function') {
           console.warn(this.node.toMarkup());
-          message = (this.node.toString()) + " - Expression `" + step.expr[k] + "` on property `" + k + "` is not a function";
+          message = this.node.toString() + " - Expression `" + step.expr[k] + "` on property `" + k + "` is not a function";
           throw new Error(message);
         }
       }
@@ -58014,7 +58536,7 @@ Track = (function(superClass) {
     return [result, values, start, end];
   };
 
-  Track.prototype.update = function() {
+  Track.prototype.update = function () {
     var clock, ease, easeMethod, end, expr, find, from, getLerpFactor, getPlayhead, k, live, node, playhead, ref, script, section, seek, start, to;
     playhead = this.playhead, script = this.script;
     ref = this.props, ease = ref.ease, seek = ref.seek;
@@ -58023,7 +58545,7 @@ Track = (function(superClass) {
       playhead = seek;
     }
     if (script.length) {
-      find = function() {
+      find = function find() {
         var i, j, last, len, step;
         last = script[0];
         for (i = j = 0, len = script.length; j < len; i = ++j) {
@@ -58047,7 +58569,7 @@ Track = (function(superClass) {
       to = section.next;
       start = from.key;
       end = to.key;
-      easeMethod = (function() {
+      easeMethod = function () {
         switch (ease) {
           case 'linear':
           case 0:
@@ -58064,10 +58586,10 @@ Track = (function(superClass) {
           default:
             return Ease.cosine;
         }
-      })();
+      }();
       clock = node.clock;
-      getPlayhead = (function(_this) {
-        return function(time) {
+      getPlayhead = function (_this) {
+        return function (time) {
           var now;
           if (_this.velocity == null) {
             return _this.playhead;
@@ -58075,62 +58597,62 @@ Track = (function(superClass) {
           now = clock.getTime();
           return _this.playhead + _this.velocity * (time - now.time);
         };
-      })(this);
-      getLerpFactor = (function() {
+      }(this);
+      getLerpFactor = function () {
         var scale;
         scale = 1 / Math.max(0.0001, end - start);
-        return function(time) {
+        return function (time) {
           return easeMethod((getPlayhead(time) - start) * scale, 0, 1);
         };
-      })();
-      live = (function(_this) {
-        return function(key) {
+      }();
+      live = function (_this) {
+        return function (key) {
           var animator, attr, fromE, fromP, invalid, toE, toP, values;
           fromE = from.expr[key];
           toE = to.expr[key];
           fromP = from.props[key];
           toP = to.props[key];
-          invalid = function() {
+          invalid = function invalid() {
             console.warn(node.toMarkup());
-            throw new Error((this.node.toString()) + " - Invalid expression result on track `" + key + "`");
+            throw new Error(this.node.toString() + " - Invalid expression result on track `" + key + "`");
           };
           attr = node.attribute(key);
           values = _this.values[key];
           animator = _this._animator;
           if (fromE && toE) {
-            return (function(values, from, to) {
-              return function(time, delta) {
+            return function (values, from, to) {
+              return function (time, delta) {
                 var _from, _to;
                 values[0] = _from = attr.T.validate(fromE(time, delta), values[0], invalid);
                 values[1] = _to = attr.T.validate(toE(time, delta), values[1], invalid);
                 return values[2] = animator.lerp(attr.T, _from, _to, getLerpFactor(time), values[2]);
               };
-            })(values, from, to);
+            }(values, from, to);
           } else if (fromE) {
-            return (function(values, from, to) {
-              return function(time, delta) {
+            return function (values, from, to) {
+              return function (time, delta) {
                 var _from;
                 values[0] = _from = attr.T.validate(fromE(time, delta), values[0], invalid);
                 return values[1] = animator.lerp(attr.T, _from, toP, getLerpFactor(time), values[1]);
               };
-            })(values, from, to);
+            }(values, from, to);
           } else if (toE) {
-            return (function(values, from, to) {
-              return function(time, delta) {
+            return function (values, from, to) {
+              return function (time, delta) {
                 var _to;
                 values[0] = _to = attr.T.validate(toE(time, delta), values[0], invalid);
                 return values[1] = animator.lerp(attr.T, fromP, _to, getLerpFactor(time), values[1]);
               };
-            })(values, from, to);
+            }(values, from, to);
           } else {
-            return (function(values, from, to) {
-              return function(time, delta) {
+            return function (values, from, to) {
+              return function (time, delta) {
                 return values[0] = animator.lerp(attr.T, fromP, toP, getLerpFactor(time), values[0]);
               };
-            })(values, from, to);
+            }(values, from, to);
           }
         };
-      })(this);
+      }(this);
       expr = {};
       for (k in from.expr) {
         if (expr[k] == null) {
@@ -58156,7 +58678,7 @@ Track = (function(superClass) {
     }
   };
 
-  Track.prototype.change = function(changed, touched, init) {
+  Track.prototype.change = function (changed, touched, init) {
     if (changed['track.target'] || changed['track.script'] || changed['track.mode']) {
       return this.rebuild();
     }
@@ -58166,21 +58688,30 @@ Track = (function(superClass) {
   };
 
   return Track;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Track;
 
 },{"../../../util":158,"../../primitive":27}],80:[function(require,module,exports){
-var Parent, Transition, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    Transition,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
 Util = require('../../../util');
 
-Transition = (function(superClass) {
+Transition = function (superClass) {
   extend(Transition, superClass);
 
   function Transition() {
@@ -58189,7 +58720,7 @@ Transition = (function(superClass) {
 
   Transition.traits = ['node', 'transition', 'transform', 'mask', 'visible', 'active'];
 
-  Transition.prototype.init = function() {
+  Transition.prototype.init = function () {
     this.animate = null;
     this.uniforms = null;
     this.state = {
@@ -58202,7 +58733,7 @@ Transition = (function(superClass) {
     return this.locked = null;
   };
 
-  Transition.prototype.make = function() {
+  Transition.prototype.make = function () {
     var activeParent, slideParent, visibleParent;
     this.uniforms = {
       transitionFrom: this._attributes.make(this._types.vec4()),
@@ -58217,48 +58748,48 @@ Transition = (function(superClass) {
     slideParent = this._inherit('slide');
     visibleParent = this._inherit('visible');
     activeParent = this._inherit('active');
-    this._listen(slideParent, 'transition.latch', (function(_this) {
-      return function(e) {
+    this._listen(slideParent, 'transition.latch', function (_this) {
+      return function (e) {
         return _this.latch(e.step);
       };
-    })(this));
-    this._listen(slideParent, 'transition.release', (function(_this) {
-      return function() {
+    }(this));
+    this._listen(slideParent, 'transition.release', function (_this) {
+      return function () {
         return _this.release();
       };
-    })(this));
-    this._listen(visibleParent, 'visible.change', (function(_this) {
-      return function() {
-        return _this.update((_this.state.isVisible = visibleParent.isVisible));
+    }(this));
+    this._listen(visibleParent, 'visible.change', function (_this) {
+      return function () {
+        return _this.update(_this.state.isVisible = visibleParent.isVisible);
       };
-    })(this));
-    this._listen(activeParent, 'active.change', (function(_this) {
-      return function() {
-        return _this.update((_this.state.isActive = activeParent.isActive));
+    }(this));
+    this._listen(activeParent, 'active.change', function (_this) {
+      return function () {
+        return _this.update(_this.state.isActive = activeParent.isActive);
       };
-    })(this));
+    }(this));
     this.animate = this._animator.make(this._types.vec2(1, 1), {
-      step: (function(_this) {
-        return function(value) {
+      step: function (_this) {
+        return function (value) {
           _this.state.enter = value.x;
           _this.state.exit = value.y;
           return _this.update();
         };
-      })(this),
-      complete: (function(_this) {
-        return function(done) {
+      }(this),
+      complete: function (_this) {
+        return function (done) {
           return _this.complete(done);
         };
-      })(this)
+      }(this)
     });
-    return this.move = (this.props.from != null) || (this.props.to != null);
+    return this.move = this.props.from != null || this.props.to != null;
   };
 
-  Transition.prototype.unmake = function() {
+  Transition.prototype.unmake = function () {
     return this.animate.dispose();
   };
 
-  Transition.prototype.latch = function(step) {
+  Transition.prototype.latch = function (step) {
     var enter, exit, forward, latched, ref, visible;
     this.locked = null;
     this.latched = latched = {
@@ -58274,7 +58805,7 @@ Transition = (function(superClass) {
     }
   };
 
-  Transition.prototype.release = function() {
+  Transition.prototype.release = function () {
     var delay, delayEnter, delayExit, duration, durationEnter, durationExit, enter, exit, forward, latched, ref, ref1, ref2, state, visible;
     latched = this.latched;
     state = this.state;
@@ -58315,7 +58846,7 @@ Transition = (function(superClass) {
     return this.update();
   };
 
-  Transition.prototype.complete = function(done) {
+  Transition.prototype.complete = function (done) {
     if (!done) {
       return;
     }
@@ -58323,7 +58854,7 @@ Transition = (function(superClass) {
     return this.update();
   };
 
-  Transition.prototype.update = function() {
+  Transition.prototype.update = function () {
     var active, enter, exit, level, partial, ref, ref1, visible;
     if (this.latched != null) {
       return;
@@ -58362,7 +58893,7 @@ Transition = (function(superClass) {
     }
   };
 
-  Transition.prototype.change = function(changed, touched, init) {
+  Transition.prototype.change = function (changed, touched, init) {
     var flipW, flipX, flipY, flipZ, stagger, staggerW, staggerX, staggerY, staggerZ;
     if (changed['transition.enter'] || changed['transition.exit'] || init) {
       this.update();
@@ -58384,21 +58915,30 @@ Transition = (function(superClass) {
   };
 
   return Transition;
-
-})(Parent);
+}(Parent);
 
 module.exports = Transition;
 
 },{"../../../util":158,"../base/parent":30}],81:[function(require,module,exports){
-var Compose, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Compose,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Compose = (function(superClass) {
+Compose = function (superClass) {
   extend(Compose, superClass);
 
   function Compose() {
@@ -58413,11 +58953,11 @@ Compose = (function(superClass) {
     color: '#ffffff'
   };
 
-  Compose.prototype.init = function() {
+  Compose.prototype.init = function () {
     return this.compose = null;
   };
 
-  Compose.prototype.resize = function() {
+  Compose.prototype.resize = function () {
     var depth, dims, height, layers, width;
     if (!(this.compose && this.bind.source)) {
       return;
@@ -58430,14 +58970,12 @@ Compose = (function(superClass) {
     return this.remapUVScale.set(width, height);
   };
 
-  Compose.prototype.make = function() {
+  Compose.prototype.make = function () {
     var alpha, composeUniforms, fragment, resampleUniforms;
-    this._helpers.bind.make([
-      {
-        to: 'operator.source',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'operator.source',
+      trait: 'source'
+    }]);
     if (this.bind.source == null) {
       return;
     }
@@ -58467,38 +59005,47 @@ Compose = (function(superClass) {
     return this._helpers.object.make([this.compose]);
   };
 
-  Compose.prototype.made = function() {
+  Compose.prototype.made = function () {
     return this.resize();
   };
 
-  Compose.prototype.unmake = function() {
+  Compose.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     return this._helpers.object.unmake();
   };
 
-  Compose.prototype.change = function(changed, touched, init) {
+  Compose.prototype.change = function (changed, touched, init) {
     if (changed['operator.source'] || changed['compose.alpha']) {
       return this.rebuild();
     }
   };
 
   return Compose;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Compose;
 
 },{"../../../util":158,"../../primitive":27}],82:[function(require,module,exports){
-var Parent, RTT, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    RTT,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
 Util = require('../../../util');
 
-RTT = (function(superClass) {
+RTT = function (superClass) {
   extend(RTT, superClass);
 
   function RTT() {
@@ -58513,23 +59060,23 @@ RTT = (function(superClass) {
     type: 'unsignedByte'
   };
 
-  RTT.prototype.init = function() {
+  RTT.prototype.init = function () {
     return this.rtt = this.scene = this.camera = this.width = this.height = this.history = this.rootSize = this.size = null;
   };
 
-  RTT.prototype.indexShader = function(shader) {
+  RTT.prototype.indexShader = function (shader) {
     return shader;
   };
 
-  RTT.prototype.imageShader = function(shader) {
+  RTT.prototype.imageShader = function (shader) {
     return this.rtt.shaderRelative(shader);
   };
 
-  RTT.prototype.sourceShader = function(shader) {
+  RTT.prototype.sourceShader = function (shader) {
     return this.rtt.shaderAbsolute(shader, this.history);
   };
 
-  RTT.prototype.getDimensions = function() {
+  RTT.prototype.getDimensions = function () {
     return {
       items: 1,
       width: this.width,
@@ -58538,11 +59085,11 @@ RTT = (function(superClass) {
     };
   };
 
-  RTT.prototype.getActiveDimensions = function() {
+  RTT.prototype.getActiveDimensions = function () {
     return this.getDimensions();
   };
 
-  RTT.prototype.make = function() {
+  RTT.prototype.make = function () {
     var aspect, height, heightFactor, history, magFilter, minFilter, ref, ref1, relativeSize, size, type, viewHeight, viewWidth, width, widthFactor;
     this.parentRoot = this._inherit('root');
     this.rootSize = this.parentRoot.getSize();
@@ -58551,7 +59098,7 @@ RTT = (function(superClass) {
     this._listen(this.parentRoot, 'root.render', this.render);
     this._listen(this.parentRoot, 'root.post', this.post);
     this._listen(this.parentRoot, 'root.camera', this.setCamera);
-    this._listen(this.parentRoot, 'root.resize', function(event) {
+    this._listen(this.parentRoot, 'root.resize', function (event) {
       return this.resize(event.size);
     });
     if (this.rootSize == null) {
@@ -58592,7 +59139,7 @@ RTT = (function(superClass) {
     };
   };
 
-  RTT.prototype.made = function() {
+  RTT.prototype.made = function () {
     this.trigger({
       type: 'source.rebuild'
     });
@@ -58604,7 +59151,7 @@ RTT = (function(superClass) {
     }
   };
 
-  RTT.prototype.unmake = function(rebuild) {
+  RTT.prototype.unmake = function (rebuild) {
     if (this.rtt == null) {
       return;
     }
@@ -58615,7 +59162,7 @@ RTT = (function(superClass) {
     return this.rtt = this.width = this.height = this.history = null;
   };
 
-  RTT.prototype.change = function(changed, touched, init) {
+  RTT.prototype.change = function (changed, touched, init) {
     if (touched['texture'] || changed['rtt.width'] || changed['rtt.height']) {
       return this.rebuild();
     }
@@ -58626,7 +59173,7 @@ RTT = (function(superClass) {
     }
   };
 
-  RTT.prototype.adopt = function(renderable) {
+  RTT.prototype.adopt = function (renderable) {
     var i, len, object, ref, results;
     ref = renderable.renders;
     results = [];
@@ -58637,7 +59184,7 @@ RTT = (function(superClass) {
     return results;
   };
 
-  RTT.prototype.unadopt = function(renderable) {
+  RTT.prototype.unadopt = function (renderable) {
     var i, len, object, ref, results;
     ref = renderable.renders;
     results = [];
@@ -58648,33 +59195,33 @@ RTT = (function(superClass) {
     return results;
   };
 
-  RTT.prototype.resize = function(size) {
+  RTT.prototype.resize = function (size) {
     var height, ref, relativeSize, width;
     this.rootSize = size;
     ref = this.props, width = ref.width, height = ref.height, size = ref.size;
     relativeSize = size === this.node.attributes['rtt.size']["enum"].relative;
-    if (!this.rtt || (width == null) || (height == null) || relativeSize) {
+    if (!this.rtt || width == null || height == null || relativeSize) {
       return this.rebuild();
     }
   };
 
-  RTT.prototype.select = function(selector) {
+  RTT.prototype.select = function (selector) {
     return this._root.node.model.select(selector, [this.node]);
   };
 
-  RTT.prototype.watch = function(selector, handler) {
+  RTT.prototype.watch = function (selector, handler) {
     return this._root.node.model.watch(selector, handler);
   };
 
-  RTT.prototype.unwatch = function(handler) {
+  RTT.prototype.unwatch = function (handler) {
     return this._root.node.model.unwatch(handler);
   };
 
-  RTT.prototype.pre = function(e) {
+  RTT.prototype.pre = function (e) {
     return this.trigger(e);
   };
 
-  RTT.prototype.update = function(e) {
+  RTT.prototype.update = function (e) {
     var camera;
     if ((camera = this.getOwnCamera()) != null) {
       camera.aspect = this.aspect || 1;
@@ -58683,17 +59230,17 @@ RTT = (function(superClass) {
     return this.trigger(e);
   };
 
-  RTT.prototype.render = function(e) {
+  RTT.prototype.render = function (e) {
     var ref;
     this.trigger(e);
     return (ref = this.rtt) != null ? ref.render(this.getCamera()) : void 0;
   };
 
-  RTT.prototype.post = function(e) {
+  RTT.prototype.post = function (e) {
     return this.trigger(e);
   };
 
-  RTT.prototype.setCamera = function() {
+  RTT.prototype.setCamera = function () {
     var camera, ref;
     camera = (ref = this.select(this.props.camera)[0]) != null ? ref.controller : void 0;
     if (this.camera !== camera) {
@@ -58709,17 +59256,17 @@ RTT = (function(superClass) {
     }
   };
 
-  RTT.prototype.getOwnCamera = function() {
+  RTT.prototype.getOwnCamera = function () {
     var ref;
     return (ref = this.camera) != null ? ref.getCamera() : void 0;
   };
 
-  RTT.prototype.getCamera = function() {
+  RTT.prototype.getCamera = function () {
     var ref;
     return (ref = this.getOwnCamera()) != null ? ref : this._inherit('root').getCamera();
   };
 
-  RTT.prototype.vertex = function(shader, pass) {
+  RTT.prototype.vertex = function (shader, pass) {
     if (pass === 2) {
       return shader.pipe('view.position');
     }
@@ -58730,21 +59277,30 @@ RTT = (function(superClass) {
   };
 
   return RTT;
-
-})(Parent);
+}(Parent);
 
 module.exports = RTT;
 
 },{"../../../util":158,"../base/parent":30}],83:[function(require,module,exports){
-var Primitive, Shader, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Primitive,
+    Shader,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Shader = (function(superClass) {
+Shader = function (superClass) {
   extend(Shader, superClass);
 
   function Shader() {
@@ -58755,28 +59311,26 @@ Shader = (function(superClass) {
 
   Shader.freeform = true;
 
-  Shader.prototype.init = function() {
+  Shader.prototype.init = function () {
     return this.shader = null;
   };
 
-  Shader.prototype.make = function() {
+  Shader.prototype.make = function () {
     var code, def, i, language, len, make, ref, ref1, snippet, type, types, uniforms;
     ref = this.props, language = ref.language, code = ref.code;
     if (language !== 'glsl') {
       throw new Error("GLSL required");
     }
-    this._helpers.bind.make([
-      {
-        to: 'shader.sources',
-        trait: 'source',
-        multiple: true
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'shader.sources',
+      trait: 'source',
+      multiple: true
+    }]);
     snippet = this._shaders.fetch(code);
     types = this._types;
     uniforms = {};
-    make = (function(_this) {
-      return function(type) {
+    make = function (_this) {
+      return function (type) {
         var t;
         switch (type) {
           case 'i':
@@ -58804,7 +59358,7 @@ Shader = (function(superClass) {
             }
         }
       };
-    })(this);
+    }(this);
     ref1 = snippet._signatures.uniform;
     for (i = 0, len = ref1.length; i < len; i++) {
       def = ref1[i];
@@ -58819,23 +59373,23 @@ Shader = (function(superClass) {
     });
   };
 
-  Shader.prototype.made = function() {
+  Shader.prototype.made = function () {
     return this.trigger({
       type: 'source.rebuild'
     });
   };
 
-  Shader.prototype.unmake = function() {
+  Shader.prototype.unmake = function () {
     return this.shader = null;
   };
 
-  Shader.prototype.change = function(changed, touched, init) {
+  Shader.prototype.change = function (changed, touched, init) {
     if (changed['shader.uniforms'] || changed['shader.code'] || changed['shader.language']) {
       return this.rebuild();
     }
   };
 
-  Shader.prototype.shaderBind = function(uniforms) {
+  Shader.prototype.shaderBind = function (uniforms) {
     var code, i, k, language, len, name, ref, ref1, ref2, s, source, u, v;
     if (uniforms == null) {
       uniforms = {};
@@ -58844,7 +59398,7 @@ Shader = (function(superClass) {
     ref1 = this.node.attributes;
     for (k in ref1) {
       v = ref1[k];
-      if ((v.type != null) && (v.short != null) && v.ns === 'uniform') {
+      if (v.type != null && v.short != null && v.ns === 'uniform') {
         if (uniforms[name = v.short] == null) {
           uniforms[name] = v;
         }
@@ -58868,21 +59422,30 @@ Shader = (function(superClass) {
   };
 
   return Shader;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Shader;
 
 },{"../../../util":158,"../../primitive":27}],84:[function(require,module,exports){
-var Format, Operator, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Format,
+    Operator,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Operator = require('../operator/operator');
 
 Util = require('../../../util');
 
-Format = (function(superClass) {
+Format = function (superClass) {
   extend(Format, superClass);
 
   function Format() {
@@ -58896,36 +59459,34 @@ Format = (function(superClass) {
     magFilter: 'linear'
   };
 
-  Format.prototype.init = function() {
+  Format.prototype.init = function () {
     Format.__super__.init.apply(this, arguments);
     this.atlas = this.buffer = this.used = this.time = null;
     return this.filled = false;
   };
 
-  Format.prototype.sourceShader = function(shader) {
+  Format.prototype.sourceShader = function (shader) {
     return this.buffer.shader(shader);
   };
 
-  Format.prototype.textShader = function(shader) {
+  Format.prototype.textShader = function (shader) {
     return this.atlas.shader(shader);
   };
 
-  Format.prototype.textIsSDF = function() {
+  Format.prototype.textIsSDF = function () {
     return this.props.sdf > 0;
   };
 
-  Format.prototype.textHeight = function() {
+  Format.prototype.textHeight = function () {
     return this.props.detail;
   };
 
-  Format.prototype.make = function() {
+  Format.prototype.make = function () {
     var atlas, depth, detail, dims, emit, font, height, items, magFilter, minFilter, ref, ref1, sdf, style, type, variant, weight, width;
-    this._helpers.bind.make([
-      {
-        to: 'operator.source',
-        trait: 'raw'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'operator.source',
+      trait: 'raw'
+    }]);
     ref = this.props, minFilter = ref.minFilter, magFilter = ref.magFilter, type = ref.type;
     ref1 = this.props, font = ref1.font, style = ref1.style, variant = ref1.variant, weight = ref1.weight, detail = ref1.detail, sdf = ref1.sdf;
     this.atlas = this._renderables.make('textAtlas', {
@@ -58956,19 +59517,19 @@ Format = (function(superClass) {
     });
     atlas = this.atlas;
     emit = this.buffer.streamer.emit;
-    this.buffer.streamer.emit = function(t) {
+    this.buffer.streamer.emit = function (t) {
       return atlas.map(t, emit);
     };
     this.clockParent = this._inherit('clock');
     return this._listen('root', 'root.update', this.update);
   };
 
-  Format.prototype.made = function() {
+  Format.prototype.made = function () {
     Format.__super__.made.apply(this, arguments);
     return this.resize();
   };
 
-  Format.prototype.unmake = function() {
+  Format.prototype.unmake = function () {
     Format.__super__.unmake.apply(this, arguments);
     if (this.buffer) {
       this.buffer.dispose();
@@ -58980,11 +59541,11 @@ Format = (function(superClass) {
     }
   };
 
-  Format.prototype.update = function() {
+  Format.prototype.update = function () {
     var dst, src, used;
     src = this.bind.source.rawBuffer();
     dst = this.buffer;
-    if ((this.filled && !this.props.live) || !this.through) {
+    if (this.filled && !this.props.live || !this.through) {
       return;
     }
     this.time = this.clockParent.getTime();
@@ -59001,7 +59562,7 @@ Format = (function(superClass) {
     }
   };
 
-  Format.prototype.change = function(changed, touched, init) {
+  Format.prototype.change = function (changed, touched, init) {
     var data, digits, expr, length, map, ref;
     if (touched['font']) {
       return this.rebuild();
@@ -59010,56 +59571,65 @@ Format = (function(superClass) {
       ref = this.props, digits = ref.digits, expr = ref.expr, data = ref.data;
       if (expr == null) {
         if (data != null) {
-          expr = function(x, y, z, w, i) {
+          expr = function expr(x, y, z, w, i) {
             return data[i];
           };
         } else {
-          expr = function(x) {
+          expr = function expr(x) {
             return x;
           };
         }
       }
       length = expr.length;
       if (digits != null) {
-        expr = (function(expr) {
-          return function(x, y, z, w, i, j, k, l, t, d) {
-            return +(expr(x, y, z, w, i, j, k, l, t, d)).toPrecision(digits);
+        expr = function (expr) {
+          return function (x, y, z, w, i, j, k, l, t, d) {
+            return +expr(x, y, z, w, i, j, k, l, t, d).toPrecision(digits);
           };
-        })(expr);
+        }(expr);
       }
       if (length > 8) {
-        map = (function(_this) {
-          return function(emit, x, y, z, w, i, j, k, l, t, d) {
+        map = function (_this) {
+          return function (emit, x, y, z, w, i, j, k, l, t, d) {
             return emit(expr(x, y, z, w, i, j, k, l, _this.time.clock, _this.time.step));
           };
-        })(this);
+        }(this);
       } else {
-        map = (function(_this) {
-          return function(emit, x, y, z, w, i, j, k, l) {
+        map = function (_this) {
+          return function (emit, x, y, z, w, i, j, k, l) {
             return emit(expr(x, y, z, w, i, j, k, l));
           };
-        })(this);
+        }(this);
       }
       return this.through = this.bind.source.rawBuffer().through(map, this.buffer);
     }
   };
 
   return Format;
-
-})(Operator);
+}(Operator);
 
 module.exports = Format;
 
 },{"../../../util":158,"../operator/operator":61}],85:[function(require,module,exports){
-var Label, Primitive, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Label,
+    Primitive,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Primitive = require('../../primitive');
 
 Util = require('../../../util');
 
-Label = (function(superClass) {
+Label = function (superClass) {
   extend(Label, superClass);
 
   function Label() {
@@ -59068,21 +59638,19 @@ Label = (function(superClass) {
 
   Label.traits = ['node', 'bind', 'object', 'visible', 'style', 'label', 'attach', 'geometry', 'position'];
 
-  Label.prototype.make = function() {
+  Label.prototype.make = function () {
     var color, combine, depth, height, items, labelUniforms, map, mask, pointDims, position, snippet, sprite, styleUniforms, textDims, textIsSDF, uniforms, unitUniforms, width;
     Label.__super__.make.apply(this, arguments);
-    this._helpers.bind.make([
-      {
-        to: 'label.text',
-        trait: 'text'
-      }, {
-        to: 'geometry.points',
-        trait: 'source'
-      }, {
-        to: 'geometry.colors',
-        trait: 'source'
-      }
-    ]);
+    this._helpers.bind.make([{
+      to: 'label.text',
+      trait: 'text'
+    }, {
+      to: 'geometry.points',
+      trait: 'source'
+    }, {
+      to: 'geometry.colors',
+      trait: 'source'
+    }]);
     if (this.bind.points == null) {
       return;
     }
@@ -59141,14 +59709,14 @@ Label = (function(superClass) {
     return this._helpers.object.make([this.sprite]);
   };
 
-  Label.prototype.unmake = function() {
+  Label.prototype.unmake = function () {
     this._helpers.bind.unmake();
     this._helpers.visible.unmake();
     this._helpers.object.unmake();
     return this.sprite = null;
   };
 
-  Label.prototype.resize = function() {
+  Label.prototype.resize = function () {
     var depth, height, items, pointDims, textDims, width;
     pointDims = this.bind.points.getActiveDimensions();
     textDims = this.bind.text.getActiveDimensions();
@@ -59159,7 +59727,7 @@ Label = (function(superClass) {
     return this.sprite.geometry.clip(width, height, depth, items);
   };
 
-  Label.prototype.change = function(changed, touched, init) {
+  Label.prototype.change = function (changed, touched, init) {
     var expand, height, outline, scale, size;
     if (touched['geometry'] || changed['label.text']) {
       return this.rebuild();
@@ -59178,21 +59746,30 @@ Label = (function(superClass) {
   };
 
   return Label;
-
-})(Primitive);
+}(Primitive);
 
 module.exports = Label;
 
 },{"../../../util":158,"../../primitive":27}],86:[function(require,module,exports){
-var Resample, Retext, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Resample,
+    Retext,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Resample = require('../operator/resample');
 
 Util = require('../../../util');
 
-Retext = (function(superClass) {
+Retext = function (superClass) {
   extend(Retext, superClass);
 
   function Retext() {
@@ -59201,39 +59778,47 @@ Retext = (function(superClass) {
 
   Retext.traits = ['node', 'bind', 'operator', 'resample', 'sampler:x', 'sampler:y', 'sampler:z', 'sampler:w', 'include', 'text'];
 
-  Retext.prototype.init = function() {
-    return this.sourceSpec = [
-      {
-        to: 'operator.source',
-        trait: 'text'
-      }
-    ];
+  Retext.prototype.init = function () {
+    return this.sourceSpec = [{
+      to: 'operator.source',
+      trait: 'text'
+    }];
   };
 
-  Retext.prototype.textShader = function(shader) {
+  Retext.prototype.textShader = function (shader) {
     return this.bind.source.textShader(shader);
   };
 
-  Retext.prototype.textIsSDF = function() {
+  Retext.prototype.textIsSDF = function () {
     var ref;
     return ((ref = this.bind.source) != null ? ref.props.sdf : void 0) > 0;
   };
 
-  Retext.prototype.textHeight = function() {
+  Retext.prototype.textHeight = function () {
     var ref;
     return (ref = this.bind.source) != null ? ref.props.detail : void 0;
   };
 
   return Retext;
-
-})(Resample);
+}(Resample);
 
 module.exports = Retext;
 
 },{"../../../util":158,"../operator/resample":64}],87:[function(require,module,exports){
-var Buffer, Text, Util, Voxel,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    Text,
+    Util,
+    Voxel,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Buffer = require('../data/buffer');
 
@@ -59241,7 +59826,7 @@ Voxel = require('../data/voxel');
 
 Util = require('../../../util');
 
-Text = (function(superClass) {
+Text = function (superClass) {
   extend(Text, superClass);
 
   function Text() {
@@ -59259,24 +59844,24 @@ Text = (function(superClass) {
     channels: 1
   };
 
-  Text.prototype.init = function() {
+  Text.prototype.init = function () {
     Text.__super__.init.apply(this, arguments);
     return this.atlas = null;
   };
 
-  Text.prototype.textShader = function(shader) {
+  Text.prototype.textShader = function (shader) {
     return this.atlas.shader(shader);
   };
 
-  Text.prototype.textIsSDF = function() {
+  Text.prototype.textIsSDF = function () {
     return this.props.sdf > 0;
   };
 
-  Text.prototype.textHeight = function() {
+  Text.prototype.textHeight = function () {
     return this.props.detail;
   };
 
-  Text.prototype.make = function() {
+  Text.prototype.make = function () {
     var atlas, channels, data, depth, detail, dims, emit, font, height, items, magFilter, minFilter, ref, ref1, ref2, ref3, ref4, reserveX, reserveY, reserveZ, sdf, space, style, type, variant, weight, width;
     ref = this.props, minFilter = ref.minFilter, magFilter = ref.magFilter, type = ref.type;
     ref1 = this.props, font = ref1.font, style = ref1.style, variant = ref1.variant, weight = ref1.weight, detail = ref1.detail, sdf = ref1.sdf;
@@ -59333,12 +59918,12 @@ Text = (function(superClass) {
     });
     atlas = this.atlas;
     emit = this.buffer.streamer.emit;
-    return this.buffer.streamer.emit = function(text) {
+    return this.buffer.streamer.emit = function (text) {
       return atlas.map(text, emit);
     };
   };
 
-  Text.prototype.unmake = function() {
+  Text.prototype.unmake = function () {
     Text.__super__.unmake.apply(this, arguments);
     if (this.atlas) {
       this.atlas.dispose();
@@ -59346,13 +59931,13 @@ Text = (function(superClass) {
     }
   };
 
-  Text.prototype.update = function() {
+  Text.prototype.update = function () {
     this.atlas.begin();
     Text.__super__.update.apply(this, arguments);
     return this.atlas.end();
   };
 
-  Text.prototype.change = function(changed, touched, init) {
+  Text.prototype.change = function (changed, touched, init) {
     if (touched['font']) {
       return this.rebuild();
     }
@@ -59360,19 +59945,27 @@ Text = (function(superClass) {
   };
 
   return Text;
-
-})(Voxel);
+}(Voxel);
 
 module.exports = Text;
 
 },{"../../../util":158,"../data/buffer":38,"../data/voxel":44}],88:[function(require,module,exports){
-var Clock, Parent,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Clock,
+    Parent,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
-Clock = (function(superClass) {
+Clock = function (superClass) {
   extend(Clock, superClass);
 
   function Clock() {
@@ -59381,7 +59974,7 @@ Clock = (function(superClass) {
 
   Clock.traits = ['node', 'clock', 'seek', 'play'];
 
-  Clock.prototype.init = function() {
+  Clock.prototype.init = function () {
     this.skew = 0;
     this.last = 0;
     return this.time = {
@@ -59393,15 +59986,15 @@ Clock = (function(superClass) {
     };
   };
 
-  Clock.prototype.make = function() {
+  Clock.prototype.make = function () {
     return this._listen('clock', 'clock.tick', this.tick);
   };
 
-  Clock.prototype.reset = function() {
+  Clock.prototype.reset = function () {
     return this.skew = 0;
   };
 
-  Clock.prototype.tick = function(e) {
+  Clock.prototype.tick = function (e) {
     var clock, delay, delta, from, pace, parent, ratio, realtime, ref, seek, speed, time, to;
     ref = this.props, from = ref.from, to = ref.to, speed = ref.speed, seek = ref.seek, pace = ref.pace, delay = ref.delay, realtime = ref.realtime;
     parent = this._inherit('clock').getTime();
@@ -59422,24 +60015,32 @@ Clock = (function(superClass) {
     return this.trigger(e);
   };
 
-  Clock.prototype.getTime = function() {
+  Clock.prototype.getTime = function () {
     return this.time;
   };
 
   return Clock;
-
-})(Parent);
+}(Parent);
 
 module.exports = Clock;
 
 },{"../base/parent":30}],89:[function(require,module,exports){
-var Now, Parent,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Now,
+    Parent,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
-Now = (function(superClass) {
+Now = function (superClass) {
   extend(Now, superClass);
 
   function Now() {
@@ -59448,7 +60049,7 @@ Now = (function(superClass) {
 
   Now.traits = ['node', 'clock', 'now'];
 
-  Now.prototype.init = function() {
+  Now.prototype.init = function () {
     var now;
     this.now = now = +new Date() / 1000;
     this.skew = 0;
@@ -59461,22 +60062,22 @@ Now = (function(superClass) {
     };
   };
 
-  Now.prototype.make = function() {
+  Now.prototype.make = function () {
     this.clockParent = this._inherit('clock');
     return this._listen('clock', 'clock.tick', this.tick);
   };
 
-  Now.prototype.unmake = function() {
+  Now.prototype.unmake = function () {
     return this.clockParent = null;
   };
 
-  Now.prototype.change = function(changed, touched, init) {
+  Now.prototype.change = function (changed, touched, init) {
     if (changed['date.now']) {
       return this.skew = 0;
     }
   };
 
-  Now.prototype.tick = function(e) {
+  Now.prototype.tick = function (e) {
     var now, pace, parent, ref, ref1, seek, speed;
     ref = this.props, now = ref.now, seek = ref.seek, pace = ref.pace, speed = ref.speed;
     parent = this.clockParent.getTime();
@@ -59489,17 +60090,18 @@ Now = (function(superClass) {
     return this.trigger(e);
   };
 
-  Now.prototype.getTime = function() {
+  Now.prototype.getTime = function () {
     return this.time;
   };
 
   return Now;
-
-})(Parent);
+}(Parent);
 
 module.exports = Now;
 
 },{"../base/parent":30}],90:[function(require,module,exports){
+'use strict';
+
 var Traits, Types;
 
 Types = require('./types');
@@ -59937,13 +60539,22 @@ Traits = {
 module.exports = Traits;
 
 },{"./types":98}],91:[function(require,module,exports){
-var Fragment, Transform,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Fragment,
+    Transform,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transform = require('./transform');
 
-Fragment = (function(superClass) {
+Fragment = function (superClass) {
   extend(Fragment, superClass);
 
   function Fragment() {
@@ -59952,27 +60563,25 @@ Fragment = (function(superClass) {
 
   Fragment.traits = ['node', 'include', 'fragment', 'bind'];
 
-  Fragment.prototype.make = function() {
-    return this._helpers.bind.make([
-      {
-        to: 'include.shader',
-        trait: 'shader',
-        optional: true
-      }
-    ]);
+  Fragment.prototype.make = function () {
+    return this._helpers.bind.make([{
+      to: 'include.shader',
+      trait: 'shader',
+      optional: true
+    }]);
   };
 
-  Fragment.prototype.unmake = function() {
+  Fragment.prototype.unmake = function () {
     return this._helpers.bind.unmake();
   };
 
-  Fragment.prototype.change = function(changed, touched, init) {
+  Fragment.prototype.change = function (changed, touched, init) {
     if (touched['include'] || changed['fragment.gamma']) {
       return this.rebuild();
     }
   };
 
-  Fragment.prototype.fragment = function(shader, pass) {
+  Fragment.prototype.fragment = function (shader, pass) {
     if (this.bind.shader != null) {
       if (pass === this.props.pass) {
         if (this.props.gamma) {
@@ -59990,21 +60599,30 @@ Fragment = (function(superClass) {
   };
 
   return Fragment;
-
-})(Transform);
+}(Transform);
 
 module.exports = Fragment;
 
 },{"./transform":94}],92:[function(require,module,exports){
-var Layer, Transform, π,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Layer,
+    Transform,
+    π,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transform = require('./transform');
 
 π = Math.PI;
 
-Layer = (function(superClass) {
+Layer = function (superClass) {
   extend(Layer, superClass);
 
   function Layer() {
@@ -60013,7 +60631,7 @@ Layer = (function(superClass) {
 
   Layer.traits = ['node', 'vertex', 'layer'];
 
-  Layer.prototype.make = function() {
+  Layer.prototype.make = function () {
     this._listen('root', 'root.resize', this.update);
     return this.uniforms = {
       layerScale: this._attributes.make(this._types.vec4()),
@@ -60021,7 +60639,7 @@ Layer = (function(superClass) {
     };
   };
 
-  Layer.prototype.update = function() {
+  Layer.prototype.update = function () {
     var _enum, aspect, camera, depth, fit, fov, pitch, ref, ref1, ref2, scale, size;
     camera = this._inherit('root').getCamera();
     size = this._inherit('root').getSize();
@@ -60047,13 +60665,13 @@ Layer = (function(superClass) {
     return this.uniforms.layerBias.value.set(0, 0, -depth, 0);
   };
 
-  Layer.prototype.change = function(changed, touched, init) {
+  Layer.prototype.change = function (changed, touched, init) {
     if (changed['layer.fit'] || changed['layer.depth'] || init) {
       return this.update();
     }
   };
 
-  Layer.prototype.vertex = function(shader, pass) {
+  Layer.prototype.vertex = function (shader, pass) {
     if (pass === 2) {
       return shader.pipe('layer.position', this.uniforms);
     }
@@ -60064,19 +60682,27 @@ Layer = (function(superClass) {
   };
 
   return Layer;
-
-})(Transform);
+}(Transform);
 
 module.exports = Layer;
 
 },{"./transform":94}],93:[function(require,module,exports){
-var Mask, Parent,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Mask,
+    Parent,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
-Mask = (function(superClass) {
+Mask = function (superClass) {
   extend(Mask, superClass);
 
   function Mask() {
@@ -60085,27 +60711,25 @@ Mask = (function(superClass) {
 
   Mask.traits = ['node', 'include', 'mask', 'bind'];
 
-  Mask.prototype.make = function() {
-    return this._helpers.bind.make([
-      {
-        to: 'include.shader',
-        trait: 'shader',
-        optional: true
-      }
-    ]);
+  Mask.prototype.make = function () {
+    return this._helpers.bind.make([{
+      to: 'include.shader',
+      trait: 'shader',
+      optional: true
+    }]);
   };
 
-  Mask.prototype.unmake = function() {
+  Mask.prototype.unmake = function () {
     return this._helpers.bind.unmake();
   };
 
-  Mask.prototype.change = function(changed, touched, init) {
+  Mask.prototype.change = function (changed, touched, init) {
     if (touched['include']) {
       return this.rebuild();
     }
   };
 
-  Mask.prototype.mask = function(shader) {
+  Mask.prototype.mask = function (shader) {
     var ref, ref1, s;
     if (this.bind.shader != null) {
       if (shader) {
@@ -60128,19 +60752,27 @@ Mask = (function(superClass) {
   };
 
   return Mask;
-
-})(Parent);
+}(Parent);
 
 module.exports = Mask;
 
 },{"../base/parent":30}],94:[function(require,module,exports){
-var Parent, Transform,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Parent,
+    Transform,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Parent = require('../base/parent');
 
-Transform = (function(superClass) {
+Transform = function (superClass) {
   extend(Transform, superClass);
 
   function Transform() {
@@ -60149,32 +60781,41 @@ Transform = (function(superClass) {
 
   Transform.traits = ['node', 'vertex', 'fragment'];
 
-  Transform.prototype.vertex = function(shader, pass) {
+  Transform.prototype.vertex = function (shader, pass) {
     var ref, ref1;
     return (ref = (ref1 = this._inherit('vertex')) != null ? ref1.vertex(shader, pass) : void 0) != null ? ref : shader;
   };
 
-  Transform.prototype.fragment = function(shader, pass) {
+  Transform.prototype.fragment = function (shader, pass) {
     var ref, ref1;
     return (ref = (ref1 = this._inherit('fragment')) != null ? ref1.fragment(shader, pass) : void 0) != null ? ref : shader;
   };
 
   return Transform;
-
-})(Parent);
+}(Parent);
 
 module.exports = Transform;
 
 },{"../base/parent":30}],95:[function(require,module,exports){
-var Transform, Transform3, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Transform,
+    Transform3,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transform = require('./transform');
 
 Util = require('../../../util');
 
-Transform3 = (function(superClass) {
+Transform3 = function (superClass) {
   extend(Transform3, superClass);
 
   function Transform3() {
@@ -60183,18 +60824,18 @@ Transform3 = (function(superClass) {
 
   Transform3.traits = ['node', 'vertex', 'transform3'];
 
-  Transform3.prototype.make = function() {
+  Transform3.prototype.make = function () {
     this.uniforms = {
       transformMatrix: this._attributes.make(this._types.mat4())
     };
     return this.composer = Util.Three.transformComposer();
   };
 
-  Transform3.prototype.unmake = function() {
+  Transform3.prototype.unmake = function () {
     return delete this.uniforms;
   };
 
-  Transform3.prototype.change = function(changed, touched, init) {
+  Transform3.prototype.change = function (changed, touched, init) {
     var e, m, p, q, r, s;
     if (changed['transform3.pass']) {
       return this.rebuild();
@@ -60211,7 +60852,7 @@ Transform3 = (function(superClass) {
     return this.uniforms.transformMatrix.value = this.composer(p, r, q, s, m, e);
   };
 
-  Transform3.prototype.vertex = function(shader, pass) {
+  Transform3.prototype.vertex = function (shader, pass) {
     if (pass === this.props.pass) {
       shader.pipe('transform3.position', this.uniforms);
     }
@@ -60219,19 +60860,27 @@ Transform3 = (function(superClass) {
   };
 
   return Transform3;
-
-})(Transform);
+}(Transform);
 
 module.exports = Transform3;
 
 },{"../../../util":158,"./transform":94}],96:[function(require,module,exports){
-var Transform, Transform4,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Transform,
+    Transform4,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transform = require('./transform');
 
-Transform4 = (function(superClass) {
+Transform4 = function (superClass) {
   extend(Transform4, superClass);
 
   function Transform4() {
@@ -60240,7 +60889,7 @@ Transform4 = (function(superClass) {
 
   Transform4.traits = ['node', 'vertex', 'transform4'];
 
-  Transform4.prototype.make = function() {
+  Transform4.prototype.make = function () {
     this.uniforms = {
       transformMatrix: this._attributes.make(this._types.mat4()),
       transformOffset: this.node.attributes['transform4.position']
@@ -60248,11 +60897,11 @@ Transform4 = (function(superClass) {
     return this.transformMatrix = this.uniforms.transformMatrix.value;
   };
 
-  Transform4.prototype.unmake = function() {
+  Transform4.prototype.unmake = function () {
     return delete this.uniforms;
   };
 
-  Transform4.prototype.change = function(changed, touched, init) {
+  Transform4.prototype.change = function (changed, touched, init) {
     var m, s, t;
     if (changed['transform4.pass']) {
       return this.rebuild();
@@ -60267,7 +60916,7 @@ Transform4 = (function(superClass) {
     return t.scale(s);
   };
 
-  Transform4.prototype.vertex = function(shader, pass) {
+  Transform4.prototype.vertex = function (shader, pass) {
     if (pass === this.props.pass) {
       shader.pipe('transform4.position', this.uniforms);
     }
@@ -60275,19 +60924,27 @@ Transform4 = (function(superClass) {
   };
 
   return Transform4;
-
-})(Transform);
+}(Transform);
 
 module.exports = Transform4;
 
 },{"./transform":94}],97:[function(require,module,exports){
-var Transform, Vertex,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Transform,
+    Vertex,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transform = require('./transform');
 
-Vertex = (function(superClass) {
+Vertex = function (superClass) {
   extend(Vertex, superClass);
 
   function Vertex() {
@@ -60296,27 +60953,25 @@ Vertex = (function(superClass) {
 
   Vertex.traits = ['node', 'include', 'vertex', 'bind'];
 
-  Vertex.prototype.make = function() {
-    return this._helpers.bind.make([
-      {
-        to: 'include.shader',
-        trait: 'shader',
-        optional: true
-      }
-    ]);
+  Vertex.prototype.make = function () {
+    return this._helpers.bind.make([{
+      to: 'include.shader',
+      trait: 'shader',
+      optional: true
+    }]);
   };
 
-  Vertex.prototype.unmake = function() {
+  Vertex.prototype.unmake = function () {
     return this._helpers.bind.unmake();
   };
 
-  Vertex.prototype.change = function(changed, touched, init) {
+  Vertex.prototype.change = function (changed, touched, init) {
     if (touched['include']) {
       return this.rebuild();
     }
   };
 
-  Vertex.prototype.vertex = function(shader, pass) {
+  Vertex.prototype.vertex = function (shader, pass) {
     if (this.bind.shader != null) {
       if (pass === this.props.pass) {
         shader.pipe(this.bind.shader.shaderBind());
@@ -60326,24 +60981,33 @@ Vertex = (function(superClass) {
   };
 
   return Vertex;
-
-})(Transform);
+}(Transform);
 
 module.exports = Vertex;
 
 },{"./transform":94}],98:[function(require,module,exports){
-var Types, Util, decorate,
-  indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+'use strict';
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+var Types,
+    Util,
+    decorate,
+    indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
 
 Util = require('../../util');
 
 Types = {
-  array: function(type, size, value) {
+  array: function array(type, size, value) {
     var lerp, op;
     if (value == null) {
       value = null;
     }
-    lerp = type.lerp ? function(a, b, target, f) {
+    lerp = type.lerp ? function (a, b, target, f) {
       var i, j, l, ref;
       l = Math.min(a.length, b.length);
       for (i = j = 0, ref = l; 0 <= ref ? j < ref : j > ref; i = 0 <= ref ? ++j : --j) {
@@ -60351,7 +61015,7 @@ Types = {
       }
       return target;
     } : void 0;
-    op = type.op ? function(a, b, target, op) {
+    op = type.op ? function (a, b, target, op) {
       var i, j, l, ref;
       l = Math.min(a.length, b.length);
       for (i = j = 0, ref = l; 0 <= ref ? j < ref : j > ref; i = 0 <= ref ? ++j : --j) {
@@ -60359,18 +61023,18 @@ Types = {
       }
       return target;
     } : void 0;
-    if ((value != null) && !(value instanceof Array)) {
+    if (value != null && !(value instanceof Array)) {
       value = [value];
     }
     return {
-      uniform: function() {
+      uniform: function uniform() {
         if (type.uniform) {
           return type.uniform() + 'v';
         } else {
           return void 0;
         }
       },
-      make: function() {
+      make: function make() {
         var i, j, ref, results;
         if (value != null) {
           return value.slice();
@@ -60384,7 +61048,7 @@ Types = {
         }
         return results;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var i, input, j, l, ref, ref1;
         if (!(value instanceof Array)) {
           value = [value];
@@ -60396,7 +61060,7 @@ Types = {
         }
         return target;
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         var al, bl, i, j, l, ref;
         al = a.length;
         bl = b.length;
@@ -60413,7 +61077,7 @@ Types = {
       },
       lerp: lerp,
       op: op,
-      clone: function(v) {
+      clone: function clone(v) {
         var j, len, results, x;
         results = [];
         for (j = 0, len = v.length; j < len; j++) {
@@ -60424,7 +61088,7 @@ Types = {
       }
     };
   },
-  letters: function(type, size, value) {
+  letters: function letters(type, size, value) {
     var array, i, j, len, v;
     if (value == null) {
       value = null;
@@ -60440,31 +61104,31 @@ Types = {
     }
     array = Types.array(type, size, value);
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return array.uniform();
       },
-      make: function() {
+      make: function make() {
         return array.make();
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value === "" + value) {
           value = value.split('');
         }
         return array.validate(value, target, invalid);
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         return array.equals(a, b);
       },
       clone: array.clone
     };
   },
-  nullable: function(type, make) {
+  nullable: function nullable(type, make) {
     var emitter, lerp, op, value;
     if (make == null) {
       make = false;
     }
     value = make ? type.make() : null;
-    emitter = type.emitter ? function(expr1, expr2) {
+    emitter = type.emitter ? function (expr1, expr2) {
       if (expr2 == null) {
         return expr1;
       }
@@ -60473,7 +61137,7 @@ Types = {
       }
       return type.emitter(expr1, expr2);
     } : void 0;
-    lerp = type.lerp ? function(a, b, target, f) {
+    lerp = type.lerp ? function (a, b, target, f) {
       if (a === null || b === null) {
         if (f < .5) {
           return a;
@@ -60487,7 +61151,7 @@ Types = {
       value = type.lerp(a, b, target, f);
       return target;
     } : void 0;
-    op = type.op ? function(a, b, target, op) {
+    op = type.op ? function (a, b, target, op) {
       if (a === null || b === null) {
         return null;
       }
@@ -60498,10 +61162,10 @@ Types = {
       return value;
     } : void 0;
     return {
-      make: function() {
+      make: function make() {
         return value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value === null) {
           return value;
         }
@@ -60510,10 +61174,10 @@ Types = {
         }
         return type.validate(value, target, invalid);
       },
-      uniform: function() {
+      uniform: function uniform() {
         return typeof type.uniform === "function" ? type.uniform() : void 0;
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         var an, bn, ref;
         an = a === null;
         bn = b === null;
@@ -60530,7 +61194,7 @@ Types = {
       emitter: emitter
     };
   },
-  "enum": function(value, keys, map) {
+  "enum": function _enum(value, keys, map) {
     var i, j, key, len, len1, n, values;
     if (keys == null) {
       keys = [];
@@ -60562,13 +61226,13 @@ Types = {
       value = map[value];
     }
     return {
-      "enum": function() {
+      "enum": function _enum() {
         return map;
       },
-      make: function() {
+      make: function make() {
         return value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var v;
         v = values[value] ? value : map[value];
         if (v != null) {
@@ -60578,7 +61242,7 @@ Types = {
       }
     };
   },
-  enumber: function(value, keys, map) {
+  enumber: function enumber(value, keys, map) {
     var _enum;
     if (map == null) {
       map = {};
@@ -60586,157 +61250,157 @@ Types = {
     _enum = Types["enum"](value, keys, map);
     return {
       "enum": _enum["enum"],
-      uniform: function() {
+      uniform: function uniform() {
         return 'f';
       },
-      make: function() {
+      make: function make() {
         var ref;
         return (ref = _enum.make()) != null ? ref : +value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value === +value) {
           return value;
         }
         return _enum.validate(value, target, invalid);
       },
-      op: function(a, b, target, op) {
-        return op(a, b);
+      op: function op(a, b, target, _op) {
+        return _op(a, b);
       }
     };
   },
-  select: function(value) {
+  select: function select(value) {
     if (value == null) {
       value = '<';
     }
     value;
     return {
-      make: function() {
+      make: function make() {
         return value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (typeof value === 'string') {
           return value;
         }
-        if (typeof value === 'object') {
+        if ((typeof value === 'undefined' ? 'undefined' : _typeof(value)) === 'object') {
           return value;
         }
         return invalid();
       }
     };
   },
-  bool: function(value) {
+  bool: function bool(value) {
     value = !!value;
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'f';
       },
-      make: function() {
+      make: function make() {
         return value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         return !!value;
       }
     };
   },
-  int: function(value) {
+  int: function int(value) {
     if (value == null) {
       value = 0;
     }
     value = +Math.round(value);
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'i';
       },
-      make: function() {
+      make: function make() {
         return value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var x;
         if (value !== (x = +value)) {
           return invalid();
         }
         return Math.round(x) || 0;
       },
-      op: function(a, b, target, op) {
-        return op(a, b);
+      op: function op(a, b, target, _op2) {
+        return _op2(a, b);
       }
     };
   },
-  round: function(value) {
+  round: function round(value) {
     if (value == null) {
       value = 0;
     }
     value = +Math.round(value);
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'f';
       },
-      make: function() {
+      make: function make() {
         return value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var x;
         if (value !== (x = +value)) {
           return invalid();
         }
         return Math.round(x) || 0;
       },
-      op: function(a, b, target, op) {
-        return op(a, b);
+      op: function op(a, b, target, _op3) {
+        return _op3(a, b);
       }
     };
   },
-  number: function(value) {
+  number: function number(value) {
     if (value == null) {
       value = 0;
     }
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'f';
       },
-      make: function() {
+      make: function make() {
         return +value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var x;
         if (value !== (x = +value)) {
           return invalid();
         }
         return x || 0;
       },
-      op: function(a, b, target, op) {
-        return op(a, b);
+      op: function op(a, b, target, _op4) {
+        return _op4(a, b);
       }
     };
   },
-  positive: function(type, strict) {
+  positive: function positive(type, strict) {
     if (strict == null) {
       strict = false;
     }
     return {
       uniform: type.uniform,
       make: type.make,
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         value = type.validate(value, target, invalid);
-        if ((value < 0) || (strict && value <= 0)) {
+        if (value < 0 || strict && value <= 0) {
           return invalid();
         }
         return value;
       },
-      op: function(a, b, target, op) {
-        return op(a, b);
+      op: function op(a, b, target, _op5) {
+        return _op5(a, b);
       }
     };
   },
-  string: function(value) {
+  string: function string(value) {
     if (value == null) {
       value = '';
     }
     return {
-      make: function() {
+      make: function make() {
         return "" + value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var x;
         if (value !== (x = "" + value)) {
           return invalid();
@@ -60745,12 +61409,12 @@ Types = {
       }
     };
   },
-  func: function() {
+  func: function func() {
     return {
-      make: function() {
-        return function() {};
+      make: function make() {
+        return function () {};
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (typeof value === 'function') {
           return value;
         }
@@ -60758,41 +61422,41 @@ Types = {
       }
     };
   },
-  emitter: function() {
+  emitter: function emitter() {
     return {
-      make: function() {
-        return function(emit) {
+      make: function make() {
+        return function (emit) {
           return emit(1, 1, 1, 1);
         };
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (typeof value === 'function') {
           return value;
         }
         return invalid();
       },
-      emitter: function(a, b) {
+      emitter: function emitter(a, b) {
         return Util.Data.getLerpEmitter(a, b);
       }
     };
   },
-  object: function(value) {
+  object: function object(value) {
     return {
-      make: function() {
+      make: function make() {
         return value != null ? value : {};
       },
-      validate: function(value, target, invalid) {
-        if (typeof value === 'object') {
+      validate: function validate(value, target, invalid) {
+        if ((typeof value === 'undefined' ? 'undefined' : _typeof(value)) === 'object') {
           return value;
         }
         return invalid();
       },
-      clone: function(v) {
+      clone: function clone(v) {
         return JSON.parse(JSON.stringify(v));
       }
     };
   },
-  timestamp: function(value) {
+  timestamp: function timestamp(value) {
     if (value == null) {
       value = null;
     }
@@ -60800,13 +61464,13 @@ Types = {
       value = Date.parse(value);
     }
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'f';
       },
-      make: function() {
+      make: function make() {
         return value != null ? value : +new Date();
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var x;
         value = Date.parse(value);
         if (value !== (x = +value)) {
@@ -60814,12 +61478,12 @@ Types = {
         }
         return value;
       },
-      op: function(a, b, target, op) {
-        return op(a, b);
+      op: function op(a, b, target, _op6) {
+        return _op6(a, b);
       }
     };
   },
-  vec2: function(x, y) {
+  vec2: function vec2(x, y) {
     var defaults;
     if (x == null) {
       x = 0;
@@ -60829,13 +61493,13 @@ Types = {
     }
     defaults = [x, y];
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'v2';
       },
-      make: function() {
+      make: function make() {
         return new THREE.Vector2(x, y);
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var ref, ref1, xx, yy;
         if (value === +value) {
           value = [value];
@@ -60854,17 +61518,17 @@ Types = {
         }
         return target;
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         return a.x === b.x && a.y === b.y;
       },
-      op: function(a, b, target, op) {
-        target.x = op(a.x, b.x);
-        target.y = op(a.y, b.y);
+      op: function op(a, b, target, _op7) {
+        target.x = _op7(a.x, b.x);
+        target.y = _op7(a.y, b.y);
         return target;
       }
     };
   },
-  ivec2: function(x, y) {
+  ivec2: function ivec2(x, y) {
     var validate, vec2;
     if (x == null) {
       x = 0;
@@ -60874,7 +61538,7 @@ Types = {
     }
     vec2 = Types.vec2(x, y);
     validate = vec2.validate;
-    vec2.validate = function(value, target, invalid) {
+    vec2.validate = function (value, target, invalid) {
       validate(value, target, invalid);
       target.x = Math.round(target.x);
       target.y = Math.round(target.y);
@@ -60882,7 +61546,7 @@ Types = {
     };
     return vec2;
   },
-  vec3: function(x, y, z) {
+  vec3: function vec3(x, y, z) {
     var defaults;
     if (x == null) {
       x = 0;
@@ -60895,13 +61559,13 @@ Types = {
     }
     defaults = [x, y, z];
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'v3';
       },
-      make: function() {
+      make: function make() {
         return new THREE.Vector3(x, y, z);
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var ref, ref1, ref2, xx, yy, zz;
         if (value === +value) {
           value = [value];
@@ -60921,18 +61585,18 @@ Types = {
         }
         return target;
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         return a.x === b.x && a.y === b.y && a.z === b.z;
       },
-      op: function(a, b, target, op) {
-        target.x = op(a.x, b.x);
-        target.y = op(a.y, b.y);
-        target.z = op(a.z, b.z);
+      op: function op(a, b, target, _op8) {
+        target.x = _op8(a.x, b.x);
+        target.y = _op8(a.y, b.y);
+        target.z = _op8(a.z, b.z);
         return target;
       }
     };
   },
-  ivec3: function(x, y, z) {
+  ivec3: function ivec3(x, y, z) {
     var validate, vec3;
     if (x == null) {
       x = 0;
@@ -60945,7 +61609,7 @@ Types = {
     }
     vec3 = Types.vec3(x, y, z);
     validate = vec3.validate;
-    vec3.validate = function(value, target) {
+    vec3.validate = function (value, target) {
       validate(value, target, invalid);
       target.x = Math.round(target.x);
       target.y = Math.round(target.y);
@@ -60954,7 +61618,7 @@ Types = {
     };
     return vec3;
   },
-  vec4: function(x, y, z, w) {
+  vec4: function vec4(x, y, z, w) {
     var defaults;
     if (x == null) {
       x = 0;
@@ -60970,13 +61634,13 @@ Types = {
     }
     defaults = [x, y, z, w];
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'v4';
       },
-      make: function() {
+      make: function make() {
         return new THREE.Vector4(x, y, z, w);
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var ref, ref1, ref2, ref3, ww, xx, yy, zz;
         if (value === +value) {
           value = [value];
@@ -60997,19 +61661,19 @@ Types = {
         }
         return target;
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         return a.x === b.x && a.y === b.y && a.z === b.z && a.w === b.w;
       },
-      op: function(a, b, target, op) {
-        target.x = op(a.x, b.x);
-        target.y = op(a.y, b.y);
-        target.z = op(a.z, b.z);
-        target.w = op(a.w, b.w);
+      op: function op(a, b, target, _op9) {
+        target.x = _op9(a.x, b.x);
+        target.y = _op9(a.y, b.y);
+        target.z = _op9(a.z, b.z);
+        target.w = _op9(a.w, b.w);
         return target;
       }
     };
   },
-  ivec4: function(x, y, z, w) {
+  ivec4: function ivec4(x, y, z, w) {
     var validate, vec4;
     if (x == null) {
       x = 0;
@@ -61025,7 +61689,7 @@ Types = {
     }
     vec4 = Types.vec4(x, y, z, w);
     validate = vec4.validate;
-    vec4.validate = function(value, target) {
+    vec4.validate = function (value, target) {
       validate(value, target, invalid);
       target.x = Math.round(target.x);
       target.y = Math.round(target.y);
@@ -61035,7 +61699,7 @@ Types = {
     };
     return vec4;
   },
-  mat3: function(n11, n12, n13, n21, n22, n23, n31, n32, n33) {
+  mat3: function mat3(n11, n12, n13, n21, n22, n23, n31, n32, n33) {
     var defaults;
     if (n11 == null) {
       n11 = 1;
@@ -61066,16 +61730,16 @@ Types = {
     }
     defaults = [n11, n12, n13, n21, n22, n23, n31, n32, n33];
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'm4';
       },
-      make: function() {
+      make: function make() {
         var m;
-        m = new THREE.Matrix3;
+        m = new THREE.Matrix3();
         m.set(n11, n12, n13, n21, n22, n23, n31, n32, n33);
         return m;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value instanceof THREE.Matrix3) {
           target.copy(value);
         } else if (value instanceof Array) {
@@ -61088,7 +61752,7 @@ Types = {
       }
     };
   },
-  mat4: function(n11, n12, n13, n14, n21, n22, n23, n24, n31, n32, n33, n34, n41, n42, n43, n44) {
+  mat4: function mat4(n11, n12, n13, n14, n21, n22, n23, n24, n31, n32, n33, n34, n41, n42, n43, n44) {
     var defaults;
     if (n11 == null) {
       n11 = 1;
@@ -61140,16 +61804,16 @@ Types = {
     }
     defaults = [n11, n12, n13, n14, n21, n22, n23, n24, n31, n32, n33, n34, n41, n42, n43, n44];
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'm4';
       },
-      make: function() {
+      make: function make() {
         var m;
-        m = new THREE.Matrix4;
+        m = new THREE.Matrix4();
         m.set(n11, n12, n13, n14, n21, n22, n23, n24, n31, n32, n33, n34, n41, n42, n43, n44);
         return m;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value instanceof THREE.Matrix4) {
           target.copy(value);
         } else if (value instanceof Array) {
@@ -61162,7 +61826,7 @@ Types = {
       }
     };
   },
-  quat: function(x, y, z, w) {
+  quat: function quat(x, y, z, w) {
     var vec4;
     if (x == null) {
       x = 0;
@@ -61178,13 +61842,13 @@ Types = {
     }
     vec4 = Types.vec4(x, y, z, w);
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'v4';
       },
-      make: function() {
-        return new THREE.Quaternion;
+      make: function make() {
+        return new THREE.Quaternion();
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value instanceof THREE.Quaternion) {
           target.copy(value);
         } else {
@@ -61193,24 +61857,24 @@ Types = {
         target.normalize();
         return target;
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         return a.x === b.x && a.y === b.y && a.z === b.z && a.w === b.w;
       },
-      op: function(a, b, target, op) {
-        target.x = op(a.x, b.x);
-        target.y = op(a.y, b.y);
-        target.z = op(a.z, b.z);
-        target.w = op(a.w, b.w);
+      op: function op(a, b, target, _op10) {
+        target.x = _op10(a.x, b.x);
+        target.y = _op10(a.y, b.y);
+        target.z = _op10(a.z, b.z);
+        target.w = _op10(a.w, b.w);
         target.normalize();
         return target;
       },
-      lerp: function(a, b, target, f) {
+      lerp: function lerp(a, b, target, f) {
         THREE.Quaternion.slerp(a, b, target, f);
         return target;
       }
     };
   },
-  color: function(r, g, b) {
+  color: function color(r, g, b) {
     var defaults;
     if (r == null) {
       r = .5;
@@ -61223,13 +61887,13 @@ Types = {
     }
     defaults = [r, g, b];
     return {
-      uniform: function() {
+      uniform: function uniform() {
         return 'c';
       },
-      make: function() {
+      make: function make() {
         return new THREE.Color(r, g, b);
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var bb, gg, ref, ref1, ref2, rr;
         if (value === "" + value) {
           value = new THREE.Color().setStyle(value);
@@ -61251,18 +61915,18 @@ Types = {
         }
         return target;
       },
-      equals: function(a, b) {
+      equals: function equals(a, b) {
         return a.r === b.r && a.g === b.g && a.b === b.b;
       },
-      op: function(a, b, target, op) {
-        target.r = op(a.r, b.r);
-        target.g = op(a.g, b.g);
-        target.b = op(a.b, b.b);
+      op: function op(a, b, target, _op11) {
+        target.r = _op11(a.r, b.r);
+        target.g = _op11(a.g, b.g);
+        target.b = _op11(a.b, b.b);
         return target;
       }
     };
   },
-  axis: function(value, allowZero) {
+  axis: function axis(value, allowZero) {
     var map, range, v;
     if (value == null) {
       value = 1;
@@ -61291,10 +61955,10 @@ Types = {
       value = v;
     }
     return {
-      make: function() {
+      make: function make() {
         return value;
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var ref;
         if ((v = map[value]) != null) {
           value = v;
@@ -61307,7 +61971,7 @@ Types = {
       }
     };
   },
-  transpose: function(order) {
+  transpose: function transpose(order) {
     var axesArray, looseArray;
     if (order == null) {
       order = [1, 2, 3, 4];
@@ -61315,20 +61979,20 @@ Types = {
     looseArray = Types.letters(Types.axis(null, false), 0, order);
     axesArray = Types.letters(Types.axis(null, false), 4, order);
     return {
-      make: function() {
+      make: function make() {
         return axesArray.make();
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var i, letter, missing, temp, unique;
         temp = [1, 2, 3, 4];
         looseArray.validate(value, temp, invalid);
         if (temp.length < 4) {
-          missing = [1, 2, 3, 4].filter(function(x) {
+          missing = [1, 2, 3, 4].filter(function (x) {
             return temp.indexOf(x) === -1;
           });
           temp = temp.concat(missing);
         }
-        unique = (function() {
+        unique = function () {
           var j, len, results;
           results = [];
           for (i = j = 0, len = temp.length; j < len; i = ++j) {
@@ -61336,7 +62000,7 @@ Types = {
             results.push(temp.indexOf(letter) === i);
           }
           return results;
-        })();
+        }();
         if (unique.indexOf(false) < 0) {
           return axesArray.validate(temp, target, invalid);
         }
@@ -61346,7 +62010,7 @@ Types = {
       clone: axesArray.clone
     };
   },
-  swizzle: function(order, size) {
+  swizzle: function swizzle(order, size) {
     var axesArray, looseArray;
     if (order == null) {
       order = [1, 2, 3, 4];
@@ -61361,10 +62025,10 @@ Types = {
     looseArray = Types.letters(Types.axis(null, false), 0, order);
     axesArray = Types.letters(Types.axis(null, true), size, order);
     return {
-      make: function() {
+      make: function make() {
         return axesArray.make();
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         var temp;
         temp = order.slice();
         looseArray.validate(value, temp, invalid);
@@ -61377,18 +62041,18 @@ Types = {
       clone: axesArray.clone
     };
   },
-  classes: function() {
+  classes: function classes() {
     var stringArray;
     stringArray = Types.array(Types.string());
     return {
-      make: function() {
+      make: function make() {
         return stringArray.make();
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value === "" + value) {
           value = value.split(' ');
         }
-        value = value.filter(function(x) {
+        value = value.filter(function (x) {
           return !!x.length;
         });
         return stringArray.validate(value, target, invalid);
@@ -61397,7 +62061,7 @@ Types = {
       clone: stringArray.clone
     };
   },
-  blending: function(value) {
+  blending: function blending(value) {
     var keys;
     if (value == null) {
       value = 'normal';
@@ -61405,7 +62069,7 @@ Types = {
     keys = ['no', 'normal', 'add', 'subtract', 'multiply', 'custom'];
     return Types["enum"](value, keys);
   },
-  filter: function(value) {
+  filter: function filter(value) {
     var map;
     if (value == null) {
       value = 'nearest';
@@ -61420,7 +62084,7 @@ Types = {
     };
     return Types["enum"](value, [], map);
   },
-  type: function(value) {
+  type: function type(value) {
     var map;
     if (value == null) {
       value = 'unsignedByte';
@@ -61436,7 +62100,7 @@ Types = {
     };
     return Types["enum"](value, [], map);
   },
-  scale: function(value) {
+  scale: function scale(value) {
     var keys;
     if (value == null) {
       value = 'linear';
@@ -61444,7 +62108,7 @@ Types = {
     keys = ['linear', 'log'];
     return Types["enum"](value, keys);
   },
-  mapping: function(value) {
+  mapping: function mapping(value) {
     var keys;
     if (value == null) {
       value = 'relative';
@@ -61452,7 +62116,7 @@ Types = {
     keys = ['relative', 'absolute'];
     return Types["enum"](value, keys);
   },
-  indexing: function(value) {
+  indexing: function indexing(value) {
     var keys;
     if (value == null) {
       value = 'original';
@@ -61460,7 +62124,7 @@ Types = {
     keys = ['original', 'final'];
     return Types["enum"](value, keys);
   },
-  shape: function(value) {
+  shape: function shape(value) {
     var keys;
     if (value == null) {
       value = 'circle';
@@ -61468,7 +62132,7 @@ Types = {
     keys = ['circle', 'square', 'diamond', 'up', 'down', 'left', 'right'];
     return Types["enum"](value, keys);
   },
-  join: function(value) {
+  join: function join(value) {
     var keys;
     if (value == null) {
       value = 'miter';
@@ -61476,7 +62140,7 @@ Types = {
     keys = ['miter', 'round', 'bevel'];
     return Types["enum"](value, keys);
   },
-  stroke: function(value) {
+  stroke: function stroke(value) {
     var keys;
     if (value == null) {
       value = 'solid';
@@ -61484,7 +62148,7 @@ Types = {
     keys = ['solid', 'dotted', 'dashed'];
     return Types["enum"](value, keys);
   },
-  vertexPass: function(value) {
+  vertexPass: function vertexPass(value) {
     var keys;
     if (value == null) {
       value = 'view';
@@ -61492,7 +62156,7 @@ Types = {
     keys = ['data', 'view', 'world', 'eye'];
     return Types["enum"](value, keys);
   },
-  fragmentPass: function(value) {
+  fragmentPass: function fragmentPass(value) {
     var keys;
     if (value == null) {
       value = 'light';
@@ -61500,7 +62164,7 @@ Types = {
     keys = ['color', 'light', 'rgba'];
     return Types["enum"](value, keys);
   },
-  ease: function(value) {
+  ease: function ease(value) {
     var keys;
     if (value == null) {
       value = 'linear';
@@ -61508,7 +62172,7 @@ Types = {
     keys = ['linear', 'cosine', 'binary', 'hold'];
     return Types["enum"](value, keys);
   },
-  fit: function(value) {
+  fit: function fit(value) {
     var keys;
     if (value == null) {
       value = 'contain';
@@ -61516,7 +62180,7 @@ Types = {
     keys = ['x', 'y', 'contain', 'cover'];
     return Types["enum"](value, keys);
   },
-  anchor: function(value) {
+  anchor: function anchor(value) {
     var map;
     if (value == null) {
       value = 'middle';
@@ -61528,7 +62192,7 @@ Types = {
     };
     return Types.enumber(value, [], map);
   },
-  transitionState: function(value) {
+  transitionState: function transitionState(value) {
     var map;
     if (value == null) {
       value = 'enter';
@@ -61540,7 +62204,7 @@ Types = {
     };
     return Types.enumber(value, [], map);
   },
-  font: function(value) {
+  font: function font(value) {
     var parse, stringArray;
     if (value == null) {
       value = 'sans-serif';
@@ -61551,10 +62215,10 @@ Types = {
     }
     stringArray = Types.array(Types.string(), 0, value);
     return {
-      make: function() {
+      make: function make() {
         return stringArray.make();
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         try {
           if (!(value instanceof Array)) {
             value = parse(value);
@@ -61562,7 +62226,7 @@ Types = {
         } catch (_error) {
           return invalid();
         }
-        value = value.filter(function(x) {
+        value = value.filter(function (x) {
           return !!x.length;
         });
         return stringArray.validate(value, target, invalid);
@@ -61571,15 +62235,15 @@ Types = {
       clone: stringArray.clone
     };
   },
-  data: function(value) {
+  data: function data(value) {
     if (value == null) {
       value = [];
     }
     return {
-      make: function() {
+      make: function make() {
         return [];
       },
-      validate: function(value, target, invalid) {
+      validate: function validate(value, target, invalid) {
         if (value instanceof Array) {
           return value;
         } else if ((value != null ? value.length : void 0) != null) {
@@ -61588,40 +62252,40 @@ Types = {
           return invalid();
         }
       },
-      emitter: function(a, b) {
+      emitter: function emitter(a, b) {
         return Util.Data.getLerpThunk(a, b);
       }
     };
   }
 };
 
-decorate = function(types) {
+decorate = function decorate(types) {
   var k, type;
   for (k in types) {
     type = types[k];
-    types[k] = (function(type) {
-      return function() {
+    types[k] = function (type) {
+      return function () {
         var t;
         t = type.apply(type, arguments);
         if (t.validate == null) {
-          t.validate = function(v) {
+          t.validate = function (v) {
             return v != null;
           };
         }
         if (t.equals == null) {
-          t.equals = function(a, b) {
+          t.equals = function (a, b) {
             return a === b;
           };
         }
         if (t.clone == null) {
-          t.clone = function(v) {
+          t.clone = function (v) {
             var ref;
             return (ref = v != null ? typeof v.clone === "function" ? v.clone() : void 0 : void 0) != null ? ref : v;
           };
         }
         return t;
       };
-    })(type);
+    }(type);
   }
   return types;
 };
@@ -61629,15 +62293,25 @@ decorate = function(types) {
 module.exports = decorate(Types);
 
 },{"../../util":158}],99:[function(require,module,exports){
-var Cartesian, Util, View,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Cartesian,
+    Util,
+    View,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 View = require('./view');
 
 Util = require('../../../util');
 
-Cartesian = (function(superClass) {
+Cartesian = function (superClass) {
   extend(Cartesian, superClass);
 
   function Cartesian() {
@@ -61646,7 +62320,7 @@ Cartesian = (function(superClass) {
 
   Cartesian.traits = ['node', 'object', 'visible', 'view', 'view3', 'vertex'];
 
-  Cartesian.prototype.make = function() {
+  Cartesian.prototype.make = function () {
     Cartesian.__super__.make.apply(this, arguments);
     this.uniforms = {
       viewMatrix: this._attributes.make(this._types.mat4())
@@ -61655,14 +62329,14 @@ Cartesian = (function(superClass) {
     return this.composer = Util.Three.transformComposer();
   };
 
-  Cartesian.prototype.unmake = function() {
+  Cartesian.prototype.unmake = function () {
     Cartesian.__super__.unmake.apply(this, arguments);
     delete this.viewMatrix;
     delete this.objectMatrix;
     return delete this.uniforms;
   };
 
-  Cartesian.prototype.change = function(changed, touched, init) {
+  Cartesian.prototype.change = function (changed, touched, init) {
     var dx, dy, dz, e, g, p, q, r, s, sx, sy, sz, transformMatrix, x, y, z;
     if (!(touched['view'] || touched['view3'] || init)) {
       return;
@@ -61676,9 +62350,9 @@ Cartesian = (function(superClass) {
     x = g[0].x;
     y = g[1].x;
     z = g[2].x;
-    dx = (g[0].y - x) || 1;
-    dy = (g[1].y - y) || 1;
-    dz = (g[2].y - z) || 1;
+    dx = g[0].y - x || 1;
+    dy = g[1].y - y || 1;
+    dz = g[2].y - z || 1;
     sx = s.x;
     sy = s.y;
     sz = s.z;
@@ -61692,7 +62366,7 @@ Cartesian = (function(superClass) {
     }
   };
 
-  Cartesian.prototype.vertex = function(shader, pass) {
+  Cartesian.prototype.vertex = function (shader, pass) {
     if (pass === 1) {
       shader.pipe('cartesian.position', this.uniforms);
     }
@@ -61700,19 +62374,27 @@ Cartesian = (function(superClass) {
   };
 
   return Cartesian;
-
-})(View);
+}(View);
 
 module.exports = Cartesian;
 
 },{"../../../util":158,"./view":105}],100:[function(require,module,exports){
-var Cartesian4, View,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Cartesian4,
+    View,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 View = require('./view');
 
-Cartesian4 = (function(superClass) {
+Cartesian4 = function (superClass) {
   extend(Cartesian4, superClass);
 
   function Cartesian4() {
@@ -61721,7 +62403,7 @@ Cartesian4 = (function(superClass) {
 
   Cartesian4.traits = ['node', 'object', 'visible', 'view', 'view4', 'vertex'];
 
-  Cartesian4.prototype.make = function() {
+  Cartesian4.prototype.make = function () {
     Cartesian4.__super__.make.apply(this, arguments);
     this.uniforms = {
       basisOffset: this._attributes.make(this._types.vec4()),
@@ -61731,14 +62413,14 @@ Cartesian4 = (function(superClass) {
     return this.basisOffset = this.uniforms.basisOffset.value;
   };
 
-  Cartesian4.prototype.unmake = function() {
+  Cartesian4.prototype.unmake = function () {
     Cartesian4.__super__.unmake.apply(this, arguments);
     delete this.basisScale;
     delete this.basisOffset;
     return delete this.uniforms;
   };
 
-  Cartesian4.prototype.change = function(changed, touched, init) {
+  Cartesian4.prototype.change = function (changed, touched, init) {
     var dw, dx, dy, dz, g, mult, p, s, w, x, y, z;
     if (!(touched['view'] || touched['view4'] || init)) {
       return;
@@ -61750,11 +62432,11 @@ Cartesian4 = (function(superClass) {
     y = g[1].x;
     z = g[2].x;
     w = g[3].x;
-    dx = (g[0].y - x) || 1;
-    dy = (g[1].y - y) || 1;
-    dz = (g[2].y - z) || 1;
-    dw = (g[3].y - w) || 1;
-    mult = function(a, b) {
+    dx = g[0].y - x || 1;
+    dy = g[1].y - y || 1;
+    dz = g[2].y - z || 1;
+    dw = g[3].y - w || 1;
+    mult = function mult(a, b) {
       a.x *= b.x;
       a.y *= b.y;
       a.z *= b.z;
@@ -61772,7 +62454,7 @@ Cartesian4 = (function(superClass) {
     }
   };
 
-  Cartesian4.prototype.vertex = function(shader, pass) {
+  Cartesian4.prototype.vertex = function (shader, pass) {
     if (pass === 1) {
       shader.pipe('cartesian4.position', this.uniforms);
     }
@@ -61780,21 +62462,30 @@ Cartesian4 = (function(superClass) {
   };
 
   return Cartesian4;
-
-})(View);
+}(View);
 
 module.exports = Cartesian4;
 
 },{"./view":105}],101:[function(require,module,exports){
-var Polar, Util, View,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Polar,
+    Util,
+    View,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 View = require('./view');
 
 Util = require('../../../util');
 
-Polar = (function(superClass) {
+Polar = function (superClass) {
   extend(Polar, superClass);
 
   function Polar() {
@@ -61803,7 +62494,7 @@ Polar = (function(superClass) {
 
   Polar.traits = ['node', 'object', 'visible', 'view', 'view3', 'polar', 'vertex'];
 
-  Polar.prototype.make = function() {
+  Polar.prototype.make = function () {
     var types;
     Polar.__super__.make.apply(this, arguments);
     types = this._attributes.types;
@@ -61819,7 +62510,7 @@ Polar = (function(superClass) {
     return this.aspect = 1;
   };
 
-  Polar.prototype.unmake = function() {
+  Polar.prototype.unmake = function () {
     Polar.__super__.unmake.apply(this, arguments);
     delete this.viewMatrix;
     delete this.objectMatrix;
@@ -61827,7 +62518,7 @@ Polar = (function(superClass) {
     return delete this.uniforms;
   };
 
-  Polar.prototype.change = function(changed, touched, init) {
+  Polar.prototype.change = function (changed, touched, init) {
     var ady, aspect, bend, dx, dy, dz, e, fdx, focus, g, helix, idx, p, q, r, ref, s, sdx, sdy, sx, sy, sz, transformMatrix, x, y, z;
     if (!(touched['view'] || touched['view3'] || touched['polar'] || init)) {
       return;
@@ -61844,9 +62535,9 @@ Polar = (function(superClass) {
     x = g[0].x;
     y = g[1].x;
     z = g[2].x;
-    dx = (g[0].y - x) || 1;
-    dy = (g[1].y - y) || 1;
-    dz = (g[2].y - z) || 1;
+    dx = g[0].y - x || 1;
+    dy = g[1].y - y || 1;
+    dz = g[2].y - z || 1;
     sx = s.x;
     sy = s.y;
     sz = s.z;
@@ -61869,14 +62560,14 @@ Polar = (function(superClass) {
     }
   };
 
-  Polar.prototype.vertex = function(shader, pass) {
+  Polar.prototype.vertex = function (shader, pass) {
     if (pass === 1) {
       shader.pipe('polar.position', this.uniforms);
     }
     return Polar.__super__.vertex.call(this, shader, pass);
   };
 
-  Polar.prototype.axis = function(dimension) {
+  Polar.prototype.axis = function (dimension) {
     var max, min, range;
     range = this.props.range[dimension - 1];
     min = range.x;
@@ -61889,21 +62580,30 @@ Polar = (function(superClass) {
   };
 
   return Polar;
-
-})(View);
+}(View);
 
 module.exports = Polar;
 
 },{"../../../util":158,"./view":105}],102:[function(require,module,exports){
-var Spherical, Util, View,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Spherical,
+    Util,
+    View,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 View = require('./view');
 
 Util = require('../../../util');
 
-Spherical = (function(superClass) {
+Spherical = function (superClass) {
   extend(Spherical, superClass);
 
   function Spherical() {
@@ -61912,7 +62612,7 @@ Spherical = (function(superClass) {
 
   Spherical.traits = ['node', 'object', 'visible', 'view', 'view3', 'spherical', 'vertex'];
 
-  Spherical.prototype.make = function() {
+  Spherical.prototype.make = function () {
     var types;
     Spherical.__super__.make.apply(this, arguments);
     types = this._attributes.types;
@@ -61930,7 +62630,7 @@ Spherical = (function(superClass) {
     return this.aspectY = 1;
   };
 
-  Spherical.prototype.unmake = function() {
+  Spherical.prototype.unmake = function () {
     Spherical.__super__.unmake.apply(this, arguments);
     delete this.viewMatrix;
     delete this.objectMatrix;
@@ -61939,7 +62639,7 @@ Spherical = (function(superClass) {
     return delete this.uniforms;
   };
 
-  Spherical.prototype.change = function(changed, touched, init) {
+  Spherical.prototype.change = function (changed, touched, init) {
     var adz, aspectX, aspectY, aspectZ, bend, dx, dy, dz, e, fdx, fdy, focus, g, idx, idy, p, q, r, ref, ref1, s, scaleY, sdx, sdy, sdz, sx, sy, sz, transformMatrix, x, y, z;
     if (!(touched['view'] || touched['view3'] || touched['spherical'] || init)) {
       return;
@@ -61955,9 +62655,9 @@ Spherical = (function(superClass) {
     x = g[0].x;
     y = g[1].x;
     z = g[2].x;
-    dx = (g[0].y - x) || 1;
-    dy = (g[1].y - y) || 1;
-    dz = (g[2].y - z) || 1;
+    dx = g[0].y - x || 1;
+    dy = g[1].y - y || 1;
+    dz = g[2].y - z || 1;
     sx = s.x;
     sy = s.y;
     sz = s.z;
@@ -61990,14 +62690,14 @@ Spherical = (function(superClass) {
     }
   };
 
-  Spherical.prototype.vertex = function(shader, pass) {
+  Spherical.prototype.vertex = function (shader, pass) {
     if (pass === 1) {
       shader.pipe('spherical.position', this.uniforms);
     }
     return Spherical.__super__.vertex.call(this, shader, pass);
   };
 
-  Spherical.prototype.axis = function(dimension) {
+  Spherical.prototype.axis = function (dimension) {
     var max, min, range;
     range = this.props.range[dimension - 1];
     min = range.x;
@@ -62010,21 +62710,30 @@ Spherical = (function(superClass) {
   };
 
   return Spherical;
-
-})(View);
+}(View);
 
 module.exports = Spherical;
 
 },{"../../../util":158,"./view":105}],103:[function(require,module,exports){
-var Stereographic, Util, View,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Stereographic,
+    Util,
+    View,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 View = require('./view');
 
 Util = require('../../../util');
 
-Stereographic = (function(superClass) {
+Stereographic = function (superClass) {
   extend(Stereographic, superClass);
 
   function Stereographic() {
@@ -62033,7 +62742,7 @@ Stereographic = (function(superClass) {
 
   Stereographic.traits = ['node', 'object', 'visible', 'view', 'view3', 'stereographic', 'vertex'];
 
-  Stereographic.prototype.make = function() {
+  Stereographic.prototype.make = function () {
     var types;
     Stereographic.__super__.make.apply(this, arguments);
     types = this._attributes.types;
@@ -62045,14 +62754,14 @@ Stereographic = (function(superClass) {
     return this.composer = Util.Three.transformComposer();
   };
 
-  Stereographic.prototype.unmake = function() {
+  Stereographic.prototype.unmake = function () {
     Stereographic.__super__.unmake.apply(this, arguments);
     delete this.viewMatrix;
     delete this.rotationMatrix;
     return delete this.uniforms;
   };
 
-  Stereographic.prototype.change = function(changed, touched, init) {
+  Stereographic.prototype.change = function (changed, touched, init) {
     var bend, dx, dy, dz, e, g, p, q, r, ref, s, sx, sy, sz, transformMatrix, x, y, z;
     if (!(touched['view'] || touched['view3'] || touched['stereographic'] || init)) {
       return;
@@ -62067,9 +62776,9 @@ Stereographic = (function(superClass) {
     x = g[0].x;
     y = g[1].x;
     z = g[2].x;
-    dx = (g[0].y - x) || 1;
-    dy = (g[1].y - y) || 1;
-    dz = (g[2].y - z) || 1;
+    dx = g[0].y - x || 1;
+    dy = g[1].y - y || 1;
+    dz = g[2].y - z || 1;
     sx = s.x;
     sy = s.y;
     sz = s.z;
@@ -62085,7 +62794,7 @@ Stereographic = (function(superClass) {
     }
   };
 
-  Stereographic.prototype.vertex = function(shader, pass) {
+  Stereographic.prototype.vertex = function (shader, pass) {
     if (pass === 1) {
       shader.pipe('stereographic.position', this.uniforms);
     }
@@ -62093,21 +62802,30 @@ Stereographic = (function(superClass) {
   };
 
   return Stereographic;
-
-})(View);
+}(View);
 
 module.exports = Stereographic;
 
 },{"../../../util":158,"./view":105}],104:[function(require,module,exports){
-var Stereographic4, Util, View,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Stereographic4,
+    Util,
+    View,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 View = require('./view');
 
 Util = require('../../../util');
 
-Stereographic4 = (function(superClass) {
+Stereographic4 = function (superClass) {
   extend(Stereographic4, superClass);
 
   function Stereographic4() {
@@ -62116,7 +62834,7 @@ Stereographic4 = (function(superClass) {
 
   Stereographic4.traits = ['node', 'object', 'visible', 'view', 'view4', 'stereographic', 'vertex'];
 
-  Stereographic4.prototype.make = function() {
+  Stereographic4.prototype.make = function () {
     Stereographic4.__super__.make.apply(this, arguments);
     this.uniforms = {
       basisOffset: this._attributes.make(this._types.vec4()),
@@ -62127,14 +62845,14 @@ Stereographic4 = (function(superClass) {
     return this.basisOffset = this.uniforms.basisOffset.value;
   };
 
-  Stereographic4.prototype.unmake = function() {
+  Stereographic4.prototype.unmake = function () {
     Stereographic4.__super__.unmake.apply(this, arguments);
     delete this.basisScale;
     delete this.basisOffset;
     return delete this.uniforms;
   };
 
-  Stereographic4.prototype.change = function(changed, touched, init) {
+  Stereographic4.prototype.change = function (changed, touched, init) {
     var bend, dw, dx, dy, dz, g, mult, p, ref, s, w, x, y, z;
     if (!(touched['view'] || touched['view4'] || touched['stereographic'] || init)) {
       return;
@@ -62147,11 +62865,11 @@ Stereographic4 = (function(superClass) {
     y = g[1].x;
     z = g[2].x;
     w = g[3].x;
-    dx = (g[0].y - x) || 1;
-    dy = (g[1].y - y) || 1;
-    dz = (g[2].y - z) || 1;
-    dw = (g[3].y - w) || 1;
-    mult = function(a, b) {
+    dx = g[0].y - x || 1;
+    dy = g[1].y - y || 1;
+    dz = g[2].y - z || 1;
+    dw = g[3].y - w || 1;
+    mult = function mult(a, b) {
       a.x *= b.x;
       a.y *= b.y;
       a.z *= b.z;
@@ -62170,7 +62888,7 @@ Stereographic4 = (function(superClass) {
     }
   };
 
-  Stereographic4.prototype.vertex = function(shader, pass) {
+  Stereographic4.prototype.vertex = function (shader, pass) {
     if (pass === 1) {
       shader.pipe('stereographic4.position', this.uniforms);
     }
@@ -62178,19 +62896,27 @@ Stereographic4 = (function(superClass) {
   };
 
   return Stereographic4;
-
-})(View);
+}(View);
 
 module.exports = Stereographic4;
 
 },{"../../../util":158,"./view":105}],105:[function(require,module,exports){
-var Transform, View,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Transform,
+    View,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Transform = require('../transform/transform');
 
-View = (function(superClass) {
+View = function (superClass) {
   extend(View, superClass);
 
   function View() {
@@ -62199,39 +62925,47 @@ View = (function(superClass) {
 
   View.traits = ['node', 'object', 'visible', 'view', 'vertex'];
 
-  View.prototype.make = function() {
+  View.prototype.make = function () {
     return this._helpers.visible.make();
   };
 
-  View.prototype.unmake = function() {
+  View.prototype.unmake = function () {
     return this._helpers.visible.unmake();
   };
 
-  View.prototype.axis = function(dimension) {
+  View.prototype.axis = function (dimension) {
     return this.props.range[dimension - 1];
   };
 
   return View;
-
-})(Transform);
+}(Transform);
 
 module.exports = View;
 
 },{"../transform/transform":94}],106:[function(require,module,exports){
-var ArrayBuffer_, DataBuffer, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ArrayBuffer_,
+    DataBuffer,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 DataBuffer = require('./databuffer');
 
 Util = require('../../util');
 
-
 /*
  * 1D + history array
  */
 
-ArrayBuffer_ = (function(superClass) {
+ArrayBuffer_ = function (superClass) {
   extend(ArrayBuffer_, superClass);
 
   function ArrayBuffer_(renderer, shaders, options) {
@@ -62245,18 +62979,18 @@ ArrayBuffer_ = (function(superClass) {
     ArrayBuffer_.__super__.constructor.call(this, renderer, shaders, options);
   }
 
-  ArrayBuffer_.prototype.build = function(options) {
+  ArrayBuffer_.prototype.build = function (options) {
     ArrayBuffer_.__super__.build.apply(this, arguments);
     this.index = 0;
     this.pad = 0;
     return this.streamer = this.generate(this.data);
   };
 
-  ArrayBuffer_.prototype.setActive = function(i) {
+  ArrayBuffer_.prototype.setActive = function (i) {
     return this.pad = Math.max(0, this.width - i);
   };
 
-  ArrayBuffer_.prototype.fill = function() {
+  ArrayBuffer_.prototype.fill = function () {
     var callback, count, done, emit, i, limit, ref, reset, skip;
     callback = this.callback;
     if (typeof callback.reset === "function") {
@@ -62272,7 +63006,7 @@ ArrayBuffer_ = (function(superClass) {
     return Math.floor(count() / this.items);
   };
 
-  ArrayBuffer_.prototype.write = function(n) {
+  ArrayBuffer_.prototype.write = function (n) {
     if (n == null) {
       n = this.samples;
     }
@@ -62283,19 +63017,19 @@ ArrayBuffer_ = (function(superClass) {
     return this.filled = Math.min(this.history, this.filled + 1);
   };
 
-  ArrayBuffer_.prototype.through = function(callback, target) {
+  ArrayBuffer_.prototype.through = function (callback, target) {
     var consume, done, dst, emit, i, pipe, ref, src;
     ref = src = this.streamer, consume = ref.consume, done = ref.done;
     emit = (dst = target.streamer).emit;
     i = 0;
-    pipe = function() {
-      return consume(function(x, y, z, w) {
+    pipe = function pipe() {
+      return consume(function (x, y, z, w) {
         return callback(emit, x, y, z, w, i);
       });
     };
     pipe = Util.Data.repeatCall(pipe, this.items);
-    return (function(_this) {
-      return function() {
+    return function (_this) {
+      return function () {
         var limit;
         src.reset();
         dst.reset();
@@ -62307,19 +63041,31 @@ ArrayBuffer_ = (function(superClass) {
         }
         return src.count();
       };
-    })(this);
+    }(this);
   };
 
   return ArrayBuffer_;
-
-})(DataBuffer);
+}(DataBuffer);
 
 module.exports = ArrayBuffer_;
 
 },{"../../util":158,"./databuffer":109}],107:[function(require,module,exports){
-var Atlas, BackedTexture, DataTexture, Renderable, Row, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Atlas,
+    BackedTexture,
+    DataTexture,
+    Renderable,
+    Row,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Renderable = require('../renderable');
 
@@ -62329,7 +63075,6 @@ DataTexture = require('./texture/datatexture');
 
 BackedTexture = require('./texture/backedtexture');
 
-
 /*
  * Dynamic sprite atlas
 #
@@ -62337,7 +63082,7 @@ BackedTexture = require('./texture/backedtexture');
  * - Will grow itself when full
  */
 
-Atlas = (function(superClass) {
+Atlas = function (superClass) {
   extend(Atlas, superClass);
 
   function Atlas(renderer, shaders, options) {
@@ -62358,7 +63103,7 @@ Atlas = (function(superClass) {
     this.build(options);
   }
 
-  Atlas.prototype.shader = function(shader) {
+  Atlas.prototype.shader = function (shader) {
     shader.pipe("map.2d.data", this.uniforms);
     shader.pipe("sample.2d", this.uniforms);
     if (this.channels < 4) {
@@ -62367,7 +63112,7 @@ Atlas = (function(superClass) {
     return shader;
   };
 
-  Atlas.prototype.build = function(options) {
+  Atlas.prototype.build = function (options) {
     var klass;
     this.klass = klass = this.backed ? BackedTexture : DataTexture;
     this.texture = new klass(this.gl, this.width, this.height, this.channels, options);
@@ -62381,12 +63126,12 @@ Atlas = (function(superClass) {
     return this.reset();
   };
 
-  Atlas.prototype.reset = function() {
+  Atlas.prototype.reset = function () {
     this.rows = [];
     return this.bottom = 0;
   };
 
-  Atlas.prototype.resize = function(width, height) {
+  Atlas.prototype.resize = function (width, height) {
     if (!this.backed) {
       throw new Error("Cannot resize unbacked texture atlas");
     }
@@ -62401,7 +63146,7 @@ Atlas = (function(superClass) {
     return this.samples = width * height;
   };
 
-  Atlas.prototype.collapse = function(row) {
+  Atlas.prototype.collapse = function (row) {
     var ref, ref1, rows;
     rows = this.rows;
     rows.splice(rows.indexOf(row), 1);
@@ -62411,7 +63156,7 @@ Atlas = (function(superClass) {
     }
   };
 
-  Atlas.prototype.allocate = function(key, width, height, emit) {
+  Atlas.prototype.allocate = function (key, width, height, emit) {
     var bottom, gap, h, i, index, j, len, max, ref, row, top, w;
     w = this.width;
     h = this.height;
@@ -62465,25 +63210,24 @@ Atlas = (function(superClass) {
     this.last = row;
   };
 
-  Atlas.prototype.read = function() {
+  Atlas.prototype.read = function () {
     return this.texture.textureObject;
   };
 
-  Atlas.prototype.write = function(data, x, y, w, h) {
+  Atlas.prototype.write = function (data, x, y, w, h) {
     return this.texture.write(data, x, y, w, h);
   };
 
-  Atlas.prototype.dispose = function() {
+  Atlas.prototype.dispose = function () {
     this.texture.dispose();
     this.data = null;
     return Atlas.__super__.dispose.apply(this, arguments);
   };
 
   return Atlas;
+}(Renderable);
 
-})(Renderable);
-
-Row = (function() {
+Row = function () {
   function Row(top, height) {
     this.top = top;
     this.bottom = top + height;
@@ -62493,7 +63237,7 @@ Row = (function() {
     this.keys = [];
   }
 
-  Row.prototype.append = function(key, width, height, emit) {
+  Row.prototype.append = function (key, width, height, emit) {
     var x, y;
     x = this.width;
     y = this.top;
@@ -62504,26 +63248,34 @@ Row = (function() {
   };
 
   return Row;
-
-})();
+}();
 
 module.exports = Atlas;
 
 },{"../../util":158,"../renderable":144,"./texture/backedtexture":116,"./texture/datatexture":117}],108:[function(require,module,exports){
-var Buffer, Renderable, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    Renderable,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Renderable = require('../renderable');
 
 Util = require('../../util');
 
-
 /*
  * Base class for sample buffers
  */
 
-Buffer = (function(superClass) {
+Buffer = function (superClass) {
   extend(Buffer, superClass);
 
   function Buffer(renderer, shaders, options) {
@@ -62537,53 +63289,62 @@ Buffer = (function(superClass) {
       this.channels = options.channels || 4;
     }
     if (this.callback == null) {
-      this.callback = options.callback || function() {};
+      this.callback = options.callback || function () {};
     }
     Buffer.__super__.constructor.call(this, renderer, shaders);
   }
 
-  Buffer.prototype.dispose = function() {
+  Buffer.prototype.dispose = function () {
     return Buffer.__super__.dispose.apply(this, arguments);
   };
 
-  Buffer.prototype.update = function() {
+  Buffer.prototype.update = function () {
     var n;
     n = this.fill();
     this.write(n);
     return n;
   };
 
-  Buffer.prototype.setActive = function(i, j, k, l) {};
+  Buffer.prototype.setActive = function (i, j, k, l) {};
 
-  Buffer.prototype.setCallback = function(callback) {
+  Buffer.prototype.setCallback = function (callback) {
     this.callback = callback;
   };
 
-  Buffer.prototype.write = function() {};
+  Buffer.prototype.write = function () {};
 
-  Buffer.prototype.fill = function() {};
+  Buffer.prototype.fill = function () {};
 
-  Buffer.prototype.generate = function(data) {
+  Buffer.prototype.generate = function (data) {
     return Util.Data.getStreamer(data, this.samples, this.channels, this.items);
   };
 
   return Buffer;
-
-})(Renderable);
+}(Renderable);
 
 module.exports = Buffer;
 
 },{"../../util":158,"../renderable":144}],109:[function(require,module,exports){
-var Buffer, DataBuffer, DataTexture, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    DataBuffer,
+    DataTexture,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Buffer = require('./buffer');
 
 DataTexture = require('./texture/datatexture');
 
 Util = require('../../util');
-
 
 /*
  * Data buffer on the GPU
@@ -62593,7 +63354,7 @@ Util = require('../../util');
  * => specialized into Array/Matrix/VoxelBuffer
  */
 
-DataBuffer = (function(superClass) {
+DataBuffer = function (superClass) {
   extend(DataBuffer, superClass);
 
   function DataBuffer(renderer, shaders, options) {
@@ -62607,7 +63368,7 @@ DataBuffer = (function(superClass) {
     this.build(options);
   }
 
-  DataBuffer.prototype.shader = function(shader, indices) {
+  DataBuffer.prototype.shader = function (shader, indices) {
     var wrap;
     if (indices == null) {
       indices = 4;
@@ -62631,7 +63392,7 @@ DataBuffer = (function(superClass) {
     return shader;
   };
 
-  DataBuffer.prototype.build = function(options) {
+  DataBuffer.prototype.build = function (options) {
     this.data = new Float32Array(this.samples * this.channels * this.items);
     this.texture = new DataTexture(this.gl, this.items * this.width, this.height * this.depth, this.channels, options);
     this.filled = 0;
@@ -62655,22 +63416,22 @@ DataBuffer = (function(superClass) {
     return this.streamer = this.generate(this.data);
   };
 
-  DataBuffer.prototype.dispose = function() {
+  DataBuffer.prototype.dispose = function () {
     this.data = null;
     this.texture.dispose();
     return DataBuffer.__super__.dispose.apply(this, arguments);
   };
 
-  DataBuffer.prototype.getFilled = function() {
+  DataBuffer.prototype.getFilled = function () {
     return this.filled;
   };
 
-  DataBuffer.prototype.setCallback = function(callback1) {
+  DataBuffer.prototype.setCallback = function (callback1) {
     this.callback = callback1;
     return this.filled = 0;
   };
 
-  DataBuffer.prototype.copy = function(data) {
+  DataBuffer.prototype.copy = function (data) {
     var d, i, j, n, ref;
     n = Math.min(data.length, this.samples * this.channels * this.items);
     d = this.data;
@@ -62680,7 +63441,7 @@ DataBuffer = (function(superClass) {
     return this.write(Math.ceil(n / this.channels / this.items));
   };
 
-  DataBuffer.prototype.write = function(n) {
+  DataBuffer.prototype.write = function (n) {
     var height, width;
     if (n == null) {
       n = this.samples;
@@ -62695,19 +63456,19 @@ DataBuffer = (function(superClass) {
     return this.used = n;
   };
 
-  DataBuffer.prototype.through = function(callback, target) {
+  DataBuffer.prototype.through = function (callback, target) {
     var consume, done, dst, emit, i, pipe, ref, src;
     ref = src = this.streamer, consume = ref.consume, done = ref.done;
     emit = (dst = target.streamer).emit;
     i = 0;
-    pipe = function() {
-      return consume(function(x, y, z, w) {
+    pipe = function pipe() {
+      return consume(function (x, y, z, w) {
         return callback(emit, x, y, z, w, i);
       });
     };
     pipe = Util.Data.repeatCall(pipe, this.items);
-    return (function(_this) {
-      return function() {
+    return function (_this) {
+      return function () {
         var limit;
         src.reset();
         dst.reset();
@@ -62719,30 +63480,38 @@ DataBuffer = (function(superClass) {
         }
         return src.count();
       };
-    })(this);
+    }(this);
   };
 
   return DataBuffer;
-
-})(Buffer);
+}(Buffer);
 
 module.exports = DataBuffer;
 
 },{"../../util":158,"./buffer":108,"./texture/datatexture":117}],110:[function(require,module,exports){
-var DataBuffer, MatrixBuffer, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var DataBuffer,
+    MatrixBuffer,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 DataBuffer = require('./databuffer');
 
 Util = require('../../util');
 
-
 /*
  * 2D + history array
  */
 
-MatrixBuffer = (function(superClass) {
+MatrixBuffer = function (superClass) {
   extend(MatrixBuffer, superClass);
 
   function MatrixBuffer(renderer, shaders, options) {
@@ -62755,7 +63524,7 @@ MatrixBuffer = (function(superClass) {
     MatrixBuffer.__super__.constructor.call(this, renderer, shaders, options);
   }
 
-  MatrixBuffer.prototype.build = function(options) {
+  MatrixBuffer.prototype.build = function (options) {
     MatrixBuffer.__super__.build.apply(this, arguments);
     this.index = 0;
     this.pad = {
@@ -62765,16 +63534,16 @@ MatrixBuffer = (function(superClass) {
     return this.streamer = this.generate(this.data);
   };
 
-  MatrixBuffer.prototype.getFilled = function() {
+  MatrixBuffer.prototype.getFilled = function () {
     return this.filled;
   };
 
-  MatrixBuffer.prototype.setActive = function(i, j) {
+  MatrixBuffer.prototype.setActive = function (i, j) {
     var ref;
     return ref = [Math.max(0, this.width - i), Math.max(0, this.height - j)], this.pad.x = ref[0], this.pad.y = ref[1], ref;
   };
 
-  MatrixBuffer.prototype.fill = function() {
+  MatrixBuffer.prototype.fill = function () {
     var callback, count, done, emit, i, j, k, limit, n, pad, ref, repeat, reset, skip;
     callback = this.callback;
     if (typeof callback.reset === "function") {
@@ -62815,7 +63584,7 @@ MatrixBuffer = (function(superClass) {
     return Math.floor(count() / this.items);
   };
 
-  MatrixBuffer.prototype.write = function(n) {
+  MatrixBuffer.prototype.write = function (n) {
     var height, width;
     if (n == null) {
       n = this.samples;
@@ -62829,19 +63598,19 @@ MatrixBuffer = (function(superClass) {
     return this.filled = Math.min(this.history, this.filled + 1);
   };
 
-  MatrixBuffer.prototype.through = function(callback, target) {
+  MatrixBuffer.prototype.through = function (callback, target) {
     var consume, done, dst, emit, i, j, pipe, ref, src;
     ref = src = this.streamer, consume = ref.consume, done = ref.done;
     emit = (dst = target.streamer).emit;
     i = j = 0;
-    pipe = function() {
-      return consume(function(x, y, z, w) {
+    pipe = function pipe() {
+      return consume(function (x, y, z, w) {
         return callback(emit, x, y, z, w, i, j);
       });
     };
     pipe = Util.Data.repeatCall(pipe, this.items);
-    return (function(_this) {
-      return function() {
+    return function (_this) {
+      return function () {
         var k, limit, n, pad;
         src.reset();
         dst.reset();
@@ -62871,19 +63640,29 @@ MatrixBuffer = (function(superClass) {
         }
         return src.count();
       };
-    })(this);
+    }(this);
   };
 
   return MatrixBuffer;
-
-})(DataBuffer);
+}(DataBuffer);
 
 module.exports = MatrixBuffer;
 
 },{"../../util":158,"./databuffer":109}],111:[function(require,module,exports){
-var Memo, RenderToTexture, Renderable, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Memo,
+    RenderToTexture,
+    Renderable,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Renderable = require('../renderable');
 
@@ -62891,12 +63670,11 @@ RenderToTexture = require('./rendertotexture');
 
 Util = require('../../util');
 
-
 /*
  * Wrapped RTT for memoizing 4D arrays back to a 2D texture
  */
 
-Memo = (function(superClass) {
+Memo = function (superClass) {
   extend(Memo, superClass);
 
   function Memo(renderer, shaders, options) {
@@ -62935,7 +63713,7 @@ Memo = (function(superClass) {
     });
   }
 
-  Memo.prototype.shaderAbsolute = function(shader) {
+  Memo.prototype.shaderAbsolute = function (shader) {
     if (shader == null) {
       shader = this.shaders.shader();
     }
@@ -62944,26 +63722,34 @@ Memo = (function(superClass) {
   };
 
   return Memo;
-
-})(RenderToTexture);
+}(RenderToTexture);
 
 module.exports = Memo;
 
 },{"../../util":158,"../renderable":144,"./rendertotexture":114}],112:[function(require,module,exports){
-var Buffer, PushBuffer, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    PushBuffer,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Buffer = require('./buffer');
 
 Util = require('../../util');
 
-
 /*
  * Buffer for CPU-side use
  */
 
-PushBuffer = (function(superClass) {
+PushBuffer = function (superClass) {
   extend(PushBuffer, superClass);
 
   function PushBuffer(renderer, shaders, options) {
@@ -62977,7 +63763,7 @@ PushBuffer = (function(superClass) {
     this.build(options);
   }
 
-  PushBuffer.prototype.build = function(options) {
+  PushBuffer.prototype.build = function (options) {
     this.data = [];
     this.data.length = this.samples;
     this.filled = 0;
@@ -62989,25 +63775,25 @@ PushBuffer = (function(superClass) {
     return this.streamer = this.generate(this.data);
   };
 
-  PushBuffer.prototype.dispose = function() {
+  PushBuffer.prototype.dispose = function () {
     this.data = null;
     return PushBuffer.__super__.dispose.apply(this, arguments);
   };
 
-  PushBuffer.prototype.getFilled = function() {
+  PushBuffer.prototype.getFilled = function () {
     return this.filled;
   };
 
-  PushBuffer.prototype.setActive = function(i, j, k) {
+  PushBuffer.prototype.setActive = function (i, j, k) {
     var ref;
     return ref = [this.width - i, this.height - j, this.depth - k], this.pad.x = ref[0], this.pad.y = ref[1], this.pad.z = ref[2], ref;
   };
 
-  PushBuffer.prototype.read = function() {
+  PushBuffer.prototype.read = function () {
     return this.data;
   };
 
-  PushBuffer.prototype.copy = function(data) {
+  PushBuffer.prototype.copy = function (data) {
     var d, i, n, p, ref, results;
     n = Math.min(data.length, this.samples);
     d = this.data;
@@ -63018,7 +63804,7 @@ PushBuffer = (function(superClass) {
     return results;
   };
 
-  PushBuffer.prototype.fill = function() {
+  PushBuffer.prototype.fill = function () {
     var callback, count, done, emit, i, j, k, l, limit, m, n, o, padX, padY, ref, repeat, reset, skip;
     callback = this.callback;
     if (typeof callback.reset === "function") {
@@ -63071,15 +63857,27 @@ PushBuffer = (function(superClass) {
   };
 
   return PushBuffer;
-
-})(Buffer);
+}(Buffer);
 
 module.exports = PushBuffer;
 
 },{"../../util":158,"./buffer":108}],113:[function(require,module,exports){
-var Buffer, Memo, MemoScreen, Readback, Renderable, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Buffer,
+    Memo,
+    MemoScreen,
+    Readback,
+    Renderable,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Renderable = require('../renderable');
 Buffer = require('./buffer');
@@ -63087,12 +63885,11 @@ Memo = require('./memo');
 MemoScreen = require('../meshes/memoscreen');
 Util = require('../../util');
 
-
 /*
  * Readback up to 4D array of up to 4D data from GL
  */
 
-Readback = (function(superClass) {
+Readback = function (superClass) {
   extend(Readback, superClass);
 
   function Readback(renderer, shaders, options) {
@@ -63132,11 +63929,11 @@ Readback = (function(superClass) {
      */
   }
 
-  Readback.prototype.build = function(options) {
+  Readback.prototype.build = function (options) {
     var channels, depth, encoder, h, height, indexer, isIndexed, items, map, sampler, stpq, stretch, w, width;
     map = options.map;
     indexer = options.indexer;
-    isIndexed = (indexer != null) && !indexer.empty();
+    isIndexed = indexer != null && !indexer.empty();
     items = this.items, width = this.width, height = this.height, depth = this.depth, stpq = this.stpq;
     sampler = map;
     if (isIndexed) {
@@ -63249,11 +64046,11 @@ Readback = (function(superClass) {
     return this.setActive(items, width, height, depth);
   };
 
-  Readback.prototype.generate = function(data) {
+  Readback.prototype.generate = function (data) {
     return Util.Data.getStreamer(data, this.samples, 4, this.items);
   };
 
-  Readback.prototype.setActive = function(items, width, height, depth) {
+  Readback.prototype.setActive = function (items, width, height, depth) {
     var h, ref, ref1, ref2, ref3, ref4, ref5, w;
     if (!(items !== this.active.items || width !== this.active.width || height !== this.active.height || depth !== this.active.depth)) {
       return;
@@ -63276,7 +64073,7 @@ Readback = (function(superClass) {
     return ref5 = [this.sampled.width - this.active.width, this.sampled.height - this.active.height, this.sampled.depth - this.active.depth, this.sampled.items - this.active.items], this.pad.x = ref5[0], this.pad.y = ref5[1], this.pad.z = ref5[2], this.pad.w = ref5[3], ref5;
   };
 
-  Readback.prototype.update = function(camera) {
+  Readback.prototype.update = function (camera) {
     var ref, ref1;
     if ((ref = this.floatMemo) != null) {
       ref.render(camera);
@@ -63284,26 +64081,26 @@ Readback = (function(superClass) {
     return (ref1 = this.byteMemo) != null ? ref1.render(camera) : void 0;
   };
 
-  Readback.prototype.post = function() {
+  Readback.prototype.post = function () {
     this.renderer.setRenderTarget(this.byteMemo.target.write);
     return this.gl.readPixels(0, 0, this.rect.w, this.rect.h, gl.RGBA, gl.UNSIGNED_BYTE, this.bytes);
   };
 
-  Readback.prototype.readFloat = function(n) {
+  Readback.prototype.readFloat = function (n) {
     var ref;
     return (ref = this.floatMemo) != null ? ref.read(n) : void 0;
   };
 
-  Readback.prototype.readByte = function(n) {
+  Readback.prototype.readByte = function (n) {
     var ref;
     return (ref = this.byteMemo) != null ? ref.read(n) : void 0;
   };
 
-  Readback.prototype.setCallback = function(callback) {
+  Readback.prototype.setCallback = function (callback) {
     return this.emitter = this.callback(callback);
   };
 
-  Readback.prototype.callback = function(callback) {
+  Readback.prototype.callback = function (callback) {
     var f, m, n, o, p;
     if (!this.isIndexed) {
       return callback;
@@ -63312,7 +64109,7 @@ Readback = (function(superClass) {
     m = this.height;
     o = this.depth;
     p = this.items;
-    f = function(x, y, z, w) {
+    f = function f(x, y, z, w) {
       var idx, ii, jj, kk, ll;
       idx = w;
       ll = idx % p;
@@ -63324,13 +64121,13 @@ Readback = (function(superClass) {
       kk = idx;
       return callback(x, y, z, w, ii, jj, kk, ll);
     };
-    f.reset = function() {
+    f.reset = function () {
       return typeof callback.reset === "function" ? callback.reset() : void 0;
     };
     return f;
   };
 
-  Readback.prototype.iterate = function() {
+  Readback.prototype.iterate = function () {
     var callback, consume, count, done, emit, i, j, k, l, limit, m, n, o, p, padW, padX, padY, padZ, ref, repeat, reset, skip;
     emit = this.emitter;
     if (typeof emit.reset === "function") {
@@ -63349,7 +64146,7 @@ Readback = (function(superClass) {
     limit = n * m * p * (o - padZ);
     if (!this.isIndexed) {
       callback = emit;
-      emit = function(x, y, z, w) {
+      emit = function emit(x, y, z, w) {
         return callback(x, y, z, w, i, j, k, l);
       };
     }
@@ -63377,7 +64174,7 @@ Readback = (function(superClass) {
     return Math.floor(count() / p);
   };
 
-  Readback.prototype.dispose = function() {
+  Readback.prototype.dispose = function () {
     var ref, ref1, ref2, ref3, ref4, ref5;
     if ((ref = this.floatMemo) != null) {
       ref.unadopt(this.floatCompose);
@@ -63401,15 +64198,25 @@ Readback = (function(superClass) {
   };
 
   return Readback;
-
-})(Renderable);
+}(Renderable);
 
 module.exports = Readback;
 
 },{"../../util":158,"../meshes/memoscreen":138,"../renderable":144,"./buffer":108,"./memo":111}],114:[function(require,module,exports){
-var RenderTarget, RenderToTexture, Renderable, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var RenderTarget,
+    RenderToTexture,
+    Renderable,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Renderable = require('../renderable');
 
@@ -63417,12 +64224,11 @@ RenderTarget = require('./texture/rendertarget');
 
 Util = require('../../util');
 
-
 /*
  * Render-To-Texture with history
  */
 
-RenderToTexture = (function(superClass) {
+RenderToTexture = function (superClass) {
   extend(RenderToTexture, superClass);
 
   function RenderToTexture(renderer, shaders, options) {
@@ -63433,14 +64239,14 @@ RenderToTexture = (function(superClass) {
     this.build(options);
   }
 
-  RenderToTexture.prototype.shaderRelative = function(shader) {
+  RenderToTexture.prototype.shaderRelative = function (shader) {
     if (shader == null) {
       shader = this.shaders.shader();
     }
     return shader.pipe("sample.2d", this.uniforms);
   };
 
-  RenderToTexture.prototype.shaderAbsolute = function(shader, frames, indices) {
+  RenderToTexture.prototype.shaderAbsolute = function (shader, frames, indices) {
     var sample2DArray;
     if (frames == null) {
       frames = 1;
@@ -63470,7 +64276,7 @@ RenderToTexture = (function(superClass) {
     }
   };
 
-  RenderToTexture.prototype.build = function(options) {
+  RenderToTexture.prototype.build = function (options) {
     var base;
     if (!this.camera) {
       this.camera = new THREE.PerspectiveCamera();
@@ -63481,11 +64287,11 @@ RenderToTexture = (function(superClass) {
       base.inject();
     }
     this.target = new RenderTarget(this.gl, options.width, options.height, options.frames, options);
-    this.target.warmup((function(_this) {
-      return function(target) {
+    this.target.warmup(function (_this) {
+      return function (target) {
         return _this.renderer.setRenderTarget(target);
       };
-    })(this));
+    }(this));
     this.renderer.setRenderTarget(null);
     this._adopt(this.target.uniforms);
     this._adopt({
@@ -63497,7 +64303,7 @@ RenderToTexture = (function(superClass) {
     return this.filled = 0;
   };
 
-  RenderToTexture.prototype.adopt = function(renderable) {
+  RenderToTexture.prototype.adopt = function (renderable) {
     var i, len, object, ref, results;
     ref = renderable.renders;
     results = [];
@@ -63508,7 +64314,7 @@ RenderToTexture = (function(superClass) {
     return results;
   };
 
-  RenderToTexture.prototype.unadopt = function(renderable) {
+  RenderToTexture.prototype.unadopt = function (renderable) {
     var i, len, object, ref, results;
     ref = renderable.renders;
     results = [];
@@ -63519,7 +64325,7 @@ RenderToTexture = (function(superClass) {
     return results;
   };
 
-  RenderToTexture.prototype.render = function(camera) {
+  RenderToTexture.prototype.render = function (camera) {
     var ref;
     if (camera == null) {
       camera = this.camera;
@@ -63531,22 +64337,22 @@ RenderToTexture = (function(superClass) {
     }
   };
 
-  RenderToTexture.prototype.read = function(frame) {
+  RenderToTexture.prototype.read = function (frame) {
     if (frame == null) {
       frame = 0;
     }
     return this.target.reads[Math.abs(frame)];
   };
 
-  RenderToTexture.prototype.getFrames = function() {
+  RenderToTexture.prototype.getFrames = function () {
     return this.target.frames;
   };
 
-  RenderToTexture.prototype.getFilled = function() {
+  RenderToTexture.prototype.getFilled = function () {
     return this.filled;
   };
 
-  RenderToTexture.prototype.dispose = function() {
+  RenderToTexture.prototype.dispose = function () {
     var base;
     if (typeof (base = this.scene).unject === "function") {
       base.unject();
@@ -63557,20 +64363,28 @@ RenderToTexture = (function(superClass) {
   };
 
   return RenderToTexture;
-
-})(Renderable);
+}(Renderable);
 
 module.exports = RenderToTexture;
 
 },{"../../util":158,"../renderable":144,"./texture/rendertarget":118}],115:[function(require,module,exports){
-var Atlas, SCRATCH_SIZE, TextAtlas,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Atlas,
+    SCRATCH_SIZE,
+    TextAtlas,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Atlas = require('./atlas');
 
 SCRATCH_SIZE = 512 / 16;
-
 
 /*
  * Dynamic text atlas
@@ -63579,7 +64393,7 @@ SCRATCH_SIZE = 512 / 16;
  * - Emits (x,y,width,height) pointers into the atlas
  */
 
-TextAtlas = (function(superClass) {
+TextAtlas = function (superClass) {
   extend(TextAtlas, superClass);
 
   function TextAtlas(renderer, shaders, options) {
@@ -63606,7 +64420,7 @@ TextAtlas = (function(superClass) {
     TextAtlas.__super__.constructor.call(this, renderer, shaders, options);
   }
 
-  TextAtlas.prototype.build = function(options) {
+  TextAtlas.prototype.build = function (options) {
     var canvas, colors, context, dilate, font, hex, i, k, lineHeight, maxWidth, quote, ref, scratch;
     TextAtlas.__super__.build.call(this, options);
     lineHeight = 16;
@@ -63616,8 +64430,8 @@ TextAtlas = (function(superClass) {
     canvas = document.createElement('canvas');
     canvas.width = maxWidth;
     canvas.height = lineHeight;
-    quote = function(str) {
-      return "\"" + (str.replace(/(['"\\])/g, '\\$1')) + "\"";
+    quote = function quote(str) {
+      return "\"" + str.replace(/(['"\\])/g, '\\$1') + "\"";
     };
     font = this.font.map(quote).join(", ");
     context = canvas.getContext('2d');
@@ -63634,7 +64448,7 @@ TextAtlas = (function(superClass) {
     colors = [];
     dilate = this.outline * 3;
     for (i = k = 0, ref = dilate; 0 <= ref ? k < ref : k > ref; i = 0 <= ref ? ++k : --k) {
-      hex = ('00' + Math.max(0, -i * 8 + 128 - (!i) * 8).toString(16)).slice(-2);
+      hex = ('00' + Math.max(0, -i * 8 + 128 - !i * 8).toString(16)).slice(-2);
       colors.push('#' + hex + hex + hex);
     }
     scratch = new Uint8Array(maxWidth * lineHeight * 2);
@@ -63648,12 +64462,12 @@ TextAtlas = (function(superClass) {
     return this._write = this.write.bind(this);
   };
 
-  TextAtlas.prototype.reset = function() {
+  TextAtlas.prototype.reset = function () {
     TextAtlas.__super__.reset.apply(this, arguments);
     return this.mapped = {};
   };
 
-  TextAtlas.prototype.begin = function() {
+  TextAtlas.prototype.begin = function () {
     var k, len, ref, results, row;
     ref = this.rows;
     results = [];
@@ -63664,7 +64478,7 @@ TextAtlas = (function(superClass) {
     return results;
   };
 
-  TextAtlas.prototype.end = function() {
+  TextAtlas.prototype.end = function () {
     var k, key, l, len, len1, mapped, ref, ref1, row;
     mapped = this.mapped;
     ref = this.rows.slice();
@@ -63682,7 +64496,7 @@ TextAtlas = (function(superClass) {
     }
   };
 
-  TextAtlas.prototype.map = function(text, emit) {
+  TextAtlas.prototype.map = function (text, emit) {
     var allocate, c, data, h, mapped, w, write;
     mapped = this.mapped;
     c = mapped[text];
@@ -63696,7 +64510,7 @@ TextAtlas = (function(superClass) {
     h = this.scratchH;
     allocate = this._allocate;
     write = this._write;
-    return allocate(text, w, h, function(row, x, y) {
+    return allocate(text, w, h, function (row, x, y) {
       mapped[text] = {
         x: x,
         y: y,
@@ -63709,7 +64523,7 @@ TextAtlas = (function(superClass) {
     });
   };
 
-  TextAtlas.prototype.draw = function(text) {
+  TextAtlas.prototype.draw = function (text) {
     var a, b, c, colors, ctx, data, dst, gamma, h, i, imageData, j, k, l, m, mask, max, n, o, ref, ref1, ref2, w, x, y;
     w = this.width;
     h = this.lineHeight;
@@ -63776,20 +64590,28 @@ TextAtlas = (function(superClass) {
   };
 
   return TextAtlas;
-
-})(Atlas);
+}(Atlas);
 
 module.exports = TextAtlas;
 
 },{"./atlas":107}],116:[function(require,module,exports){
-var BackedTexture, DataTexture, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var BackedTexture,
+    DataTexture,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Util = require('../../../Util');
 
 DataTexture = require('./datatexture');
-
 
 /*
 Manually allocated GL texture for data streaming, locally backed.
@@ -63799,7 +64621,7 @@ Contains local copy of its data to allow quick resizing without gl.copyTexImage2
 (which requires render-to-framebuffer)
  */
 
-BackedTexture = (function(superClass) {
+BackedTexture = function (superClass) {
   extend(BackedTexture, superClass);
 
   function BackedTexture(gl, width, height, channels, options) {
@@ -63807,7 +64629,7 @@ BackedTexture = (function(superClass) {
     this.data = new this.ctor(this.n);
   }
 
-  BackedTexture.prototype.resize = function(width, height) {
+  BackedTexture.prototype.resize = function (width, height) {
     var gl, old, oldHeight, oldWidth;
     old = this.data;
     oldWidth = this.width;
@@ -63824,7 +64646,7 @@ BackedTexture = (function(superClass) {
     return this.write(old, 0, 0, oldWidth, oldHeight);
   };
 
-  BackedTexture.prototype.write = function(src, x, y, w, h) {
+  BackedTexture.prototype.write = function (src, x, y, w, h) {
     var channels, dst, i, j, k, n, stride, width, ww, xx, yh, yy;
     width = this.width;
     dst = this.data;
@@ -63854,22 +64676,22 @@ BackedTexture = (function(superClass) {
     return BackedTexture.__super__.write.call(this, src, x, y, w, h);
   };
 
-  BackedTexture.prototype.dispose = function() {
+  BackedTexture.prototype.dispose = function () {
     this.data = null;
     return BackedTexture.__super__.dispose.apply(this, arguments);
   };
 
   return BackedTexture;
-
-})(DataTexture);
+}(DataTexture);
 
 module.exports = BackedTexture;
 
 },{"../../../Util":6,"./datatexture":117}],117:[function(require,module,exports){
+'use strict';
+
 var DataTexture, Util;
 
 Util = require('../../../Util');
-
 
 /*
 Manually allocated GL texture for data streaming.
@@ -63877,7 +64699,7 @@ Manually allocated GL texture for data streaming.
 Allows partial updates via subImage.
  */
 
-DataTexture = (function() {
+DataTexture = function () {
   function DataTexture(gl1, width, height, channels, options) {
     var gl, magFilter, minFilter, ref, ref1, ref2, type;
     this.gl = gl1;
@@ -63896,7 +64718,7 @@ DataTexture = (function() {
     this.build(options);
   }
 
-  DataTexture.prototype.build = function(options) {
+  DataTexture.prototype.build = function (options) {
     var gl;
     gl = this.gl;
     this.texture = gl.createTexture();
@@ -63930,7 +64752,7 @@ DataTexture = (function() {
     };
   };
 
-  DataTexture.prototype.write = function(data, x, y, w, h) {
+  DataTexture.prototype.write = function (data, x, y, w, h) {
     var gl;
     gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -63938,7 +64760,7 @@ DataTexture = (function() {
     return gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, this.format, this.type, data);
   };
 
-  DataTexture.prototype.dispose = function() {
+  DataTexture.prototype.dispose = function () {
     this.gl.deleteTexture(this.texture);
     this.textureObject.__webglInit = false;
     this.textureObject.__webglTexture = null;
@@ -63946,12 +64768,13 @@ DataTexture = (function() {
   };
 
   return DataTexture;
-
-})();
+}();
 
 module.exports = DataTexture;
 
 },{"../../../Util":6}],118:[function(require,module,exports){
+'use strict';
+
 /*
 Virtual RenderTarget that cycles through multiple frames
 Provides easy access to past rendered frames
@@ -63959,7 +64782,7 @@ Provides easy access to past rendered frames
  */
 var RenderTarget;
 
-RenderTarget = (function() {
+RenderTarget = function () {
   function RenderTarget(gl, width, height, frames, options) {
     this.gl = gl;
     if (options == null) {
@@ -63985,29 +64808,29 @@ RenderTarget = (function() {
     this.build();
   }
 
-  RenderTarget.prototype.build = function() {
+  RenderTarget.prototype.build = function () {
     var i, make;
-    make = (function(_this) {
-      return function() {
+    make = function (_this) {
+      return function () {
         return new THREE.WebGLRenderTarget(_this.width, _this.height, _this.options);
       };
-    })(this);
-    this.targets = (function() {
+    }(this);
+    this.targets = function () {
       var k, ref, results;
       results = [];
       for (i = k = 0, ref = this.buffers; 0 <= ref ? k < ref : k > ref; i = 0 <= ref ? ++k : --k) {
         results.push(make());
       }
       return results;
-    }).call(this);
-    this.reads = (function() {
+    }.call(this);
+    this.reads = function () {
       var k, ref, results;
       results = [];
       for (i = k = 0, ref = this.buffers; 0 <= ref ? k < ref : k > ref; i = 0 <= ref ? ++k : --k) {
         results.push(make());
       }
       return results;
-    }).call(this);
+    }.call(this);
     this.write = make();
     this.index = 0;
     return this.uniforms = {
@@ -64026,11 +64849,11 @@ RenderTarget = (function() {
     };
   };
 
-  RenderTarget.prototype.cycle = function() {
+  RenderTarget.prototype.cycle = function () {
     var add, buffers, copy, i, k, keys, len, read, ref;
     keys = ['__webglTexture', '__webglFramebuffer', '__webglRenderbuffer'];
     buffers = this.buffers;
-    copy = function(a, b) {
+    copy = function copy(a, b) {
       var k, key, len;
       for (k = 0, len = keys.length; k < len; k++) {
         key = keys[k];
@@ -64038,7 +64861,7 @@ RenderTarget = (function() {
       }
       return null;
     };
-    add = function(i, j) {
+    add = function add(i, j) {
       return (i + j + buffers * 2) % buffers;
     };
     copy(this.write, this.targets[this.index]);
@@ -64051,7 +64874,7 @@ RenderTarget = (function() {
     return copy(this.targets[this.index], this.write);
   };
 
-  RenderTarget.prototype.warmup = function(callback) {
+  RenderTarget.prototype.warmup = function (callback) {
     var i, k, ref, results;
     results = [];
     for (i = k = 0, ref = this.buffers; 0 <= ref ? k < ref : k > ref; i = 0 <= ref ? ++k : --k) {
@@ -64061,7 +64884,7 @@ RenderTarget = (function() {
     return results;
   };
 
-  RenderTarget.prototype.dispose = function() {
+  RenderTarget.prototype.dispose = function () {
     var k, len, ref, target;
     ref = this.targets;
     for (k = 0, len = ref.length; k < len; k++) {
@@ -64072,28 +64895,37 @@ RenderTarget = (function() {
   };
 
   return RenderTarget;
-
-})();
+}();
 
 module.exports = RenderTarget;
 
 },{}],119:[function(require,module,exports){
-var DataBuffer, Util, VoxelBuffer,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var DataBuffer,
+    Util,
+    VoxelBuffer,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 DataBuffer = require('./databuffer');
 
 Util = require('../../util');
 
-VoxelBuffer = (function(superClass) {
+VoxelBuffer = function (superClass) {
   extend(VoxelBuffer, superClass);
 
   function VoxelBuffer() {
     return VoxelBuffer.__super__.constructor.apply(this, arguments);
   }
 
-  VoxelBuffer.prototype.build = function(options) {
+  VoxelBuffer.prototype.build = function (options) {
     VoxelBuffer.__super__.build.apply(this, arguments);
     this.pad = {
       x: 0,
@@ -64103,12 +64935,12 @@ VoxelBuffer = (function(superClass) {
     return this.streamer = this.generate(this.data);
   };
 
-  VoxelBuffer.prototype.setActive = function(i, j, k) {
+  VoxelBuffer.prototype.setActive = function (i, j, k) {
     var ref;
     return ref = [Math.max(0, this.width - i), Math.max(0, this.height - j), Math.max(0, this.depth - k)], this.pad.x = ref[0], this.pad.y = ref[1], this.pad.z = ref[2], ref;
   };
 
-  VoxelBuffer.prototype.fill = function() {
+  VoxelBuffer.prototype.fill = function () {
     var callback, count, done, emit, i, j, k, l, limit, m, n, o, padX, padY, ref, repeat, reset, skip;
     callback = this.callback;
     if (typeof callback.reset === "function") {
@@ -64159,19 +64991,19 @@ VoxelBuffer = (function(superClass) {
     return Math.floor(count() / this.items);
   };
 
-  VoxelBuffer.prototype.through = function(callback, target) {
+  VoxelBuffer.prototype.through = function (callback, target) {
     var consume, done, dst, emit, i, j, k, pipe, ref, src;
     ref = src = this.streamer, consume = ref.consume, done = ref.done;
     emit = (dst = target.streamer).emit;
     i = j = k = 0;
-    pipe = function() {
-      return consume(function(x, y, z, w) {
+    pipe = function pipe() {
+      return consume(function (x, y, z, w) {
         return callback(emit, x, y, z, w, i, j, k);
       });
     };
     pipe = Util.Data.repeatCall(pipe, this.items);
-    return (function(_this) {
-      return function() {
+    return function (_this) {
+      return function () {
         var l, limit, m, n, o, padX, padY;
         src.reset();
         dst.reset();
@@ -64211,16 +65043,17 @@ VoxelBuffer = (function(superClass) {
         }
         return src.count();
       };
-    })(this);
+    }(this);
   };
 
   return VoxelBuffer;
-
-})(DataBuffer);
+}(DataBuffer);
 
 module.exports = VoxelBuffer;
 
 },{"../../util":158,"./databuffer":109}],120:[function(require,module,exports){
+'use strict';
+
 var Classes;
 
 Classes = {
@@ -64250,35 +65083,45 @@ Classes = {
 module.exports = Classes;
 
 },{"./buffer/arraybuffer":106,"./buffer/atlas":107,"./buffer/databuffer":109,"./buffer/matrixbuffer":110,"./buffer/memo":111,"./buffer/pushbuffer":112,"./buffer/readback":113,"./buffer/rendertotexture":114,"./buffer/textatlas":115,"./buffer/voxelbuffer":119,"./meshes/arrow":133,"./meshes/debug":135,"./meshes/face":136,"./meshes/line":137,"./meshes/memoscreen":138,"./meshes/point":139,"./meshes/screen":140,"./meshes/sprite":141,"./meshes/strip":142,"./meshes/surface":143,"./scene":145}],121:[function(require,module,exports){
+"use strict";
+
 var RenderFactory;
 
-RenderFactory = (function() {
+RenderFactory = function () {
   function RenderFactory(classes, renderer, shaders) {
     this.classes = classes;
     this.renderer = renderer;
     this.shaders = shaders;
   }
 
-  RenderFactory.prototype.getTypes = function() {
+  RenderFactory.prototype.getTypes = function () {
     return Object.keys(this.classes);
   };
 
-  RenderFactory.prototype.make = function(type, options) {
+  RenderFactory.prototype.make = function (type, options) {
     return new this.classes[type](this.renderer, this.shaders, options);
   };
 
   return RenderFactory;
-
-})();
+}();
 
 module.exports = RenderFactory;
+
 },{}],122:[function(require,module,exports){
-var ArrowGeometry, ClipGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ArrowGeometry,
+    ClipGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 ClipGeometry = require('./clipgeometry');
-
 
 /*
 Cones to attach as arrowheads on line strips
@@ -64290,7 +65133,7 @@ Cones to attach as arrowheads on line strips
 .....> .....> .....> .....>
  */
 
-ArrowGeometry = (function(superClass) {
+ArrowGeometry = function (superClass) {
   extend(ArrowGeometry, superClass);
 
   function ArrowGeometry(options) {
@@ -64306,7 +65149,7 @@ ArrowGeometry = (function(superClass) {
     this.anchor = anchor = (ref1 = options.anchor) != null ? ref1 : flip ? 0 : samples - 1;
     arrows = strips * ribbons * layers;
     points = (sides + 2) * arrows;
-    triangles = (sides * 2) * arrows;
+    triangles = sides * 2 * arrows;
     this.addAttribute('index', new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
     this.addAttribute('position4', new THREE.BufferAttribute(new Float32Array(points * 4), 4));
     this.addAttribute('arrow', new THREE.BufferAttribute(new Float32Array(points * 3), 3));
@@ -64364,7 +65207,7 @@ ArrowGeometry = (function(superClass) {
     return;
   }
 
-  ArrowGeometry.prototype.clip = function(samples, strips, ribbons, layers) {
+  ArrowGeometry.prototype.clip = function (samples, strips, ribbons, layers) {
     var dims, maxs, quads, segments;
     if (samples == null) {
       samples = this.samples;
@@ -64387,33 +65230,41 @@ ArrowGeometry = (function(superClass) {
     } else {
       quads = 0;
     }
-    return this._offsets([
-      {
-        start: 0,
-        count: quads * 6
-      }
-    ]);
+    return this._offsets([{
+      start: 0,
+      count: quads * 6
+    }]);
   };
 
   return ArrowGeometry;
-
-})(ClipGeometry);
+}(ClipGeometry);
 
 module.exports = ArrowGeometry;
 
 },{"./clipgeometry":123}],123:[function(require,module,exports){
-var ClipGeometry, Geometry, debug, tick,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ClipGeometry,
+    Geometry,
+    debug,
+    tick,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Geometry = require('./geometry');
 
 debug = false;
 
-tick = function() {
+tick = function tick() {
   var now;
-  now = +(new Date);
-  return function(label) {
+  now = +new Date();
+  return function (label) {
     var delta;
     delta = +new Date() - now;
     console.log(label, delta + " ms");
@@ -64421,17 +65272,17 @@ tick = function() {
   };
 };
 
-ClipGeometry = (function(superClass) {
+ClipGeometry = function (superClass) {
   extend(ClipGeometry, superClass);
 
   function ClipGeometry() {
     return ClipGeometry.__super__.constructor.apply(this, arguments);
   }
 
-  ClipGeometry.prototype._clipUniforms = function() {
+  ClipGeometry.prototype._clipUniforms = function () {
     this.geometryClip = new THREE.Vector4(1e10, 1e10, 1e10, 1e10);
-    this.geometryResolution = new THREE.Vector4;
-    this.mapSize = new THREE.Vector4;
+    this.geometryResolution = new THREE.Vector4();
+    this.mapSize = new THREE.Vector4();
     if (this.uniforms == null) {
       this.uniforms = {};
     }
@@ -64449,48 +65300,53 @@ ClipGeometry = (function(superClass) {
     };
   };
 
-  ClipGeometry.prototype._clipGeometry = function(width, height, depth, items) {
+  ClipGeometry.prototype._clipGeometry = function (width, height, depth, items) {
     var c, r;
-    c = function(x) {
+    c = function c(x) {
       return Math.max(0, x - 1);
     };
-    r = function(x) {
+    r = function r(x) {
       return 1 / Math.max(1, x - 1);
     };
     this.geometryClip.set(c(width), c(height), c(depth), c(items));
     return this.geometryResolution.set(r(width), r(height), r(depth), r(items));
   };
 
-  ClipGeometry.prototype._clipMap = function(mapWidth, mapHeight, mapDepth, mapItems) {
+  ClipGeometry.prototype._clipMap = function (mapWidth, mapHeight, mapDepth, mapItems) {
     return this.mapSize.set(mapWidth, mapHeight, mapDepth, mapItems);
   };
 
-  ClipGeometry.prototype._clipOffsets = function(factor, width, height, depth, items, _width, _height, _depth, _items) {
+  ClipGeometry.prototype._clipOffsets = function (factor, width, height, depth, items, _width, _height, _depth, _items) {
     var dims, elements, maxs;
     dims = [depth, height, width, items];
     maxs = [_depth, _height, _width, _items];
     elements = this._reduce(dims, maxs);
-    return this._offsets([
-      {
-        start: 0,
-        count: elements * factor
-      }
-    ]);
+    return this._offsets([{
+      start: 0,
+      count: elements * factor
+    }]);
   };
 
   return ClipGeometry;
-
-})(Geometry);
+}(Geometry);
 
 module.exports = ClipGeometry;
 
 },{"./geometry":125}],124:[function(require,module,exports){
-var ClipGeometry, FaceGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ClipGeometry,
+    FaceGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 ClipGeometry = require('./clipgeometry');
-
 
 /*
 (flat) Triangle fans arranged in items, columns and rows
@@ -64508,7 +65364,7 @@ ClipGeometry = require('./clipgeometry');
 +-+-+   +-+-+   +-+-+   +-+-+
  */
 
-FaceGeometry = (function(superClass) {
+FaceGeometry = function (superClass) {
   extend(FaceGeometry, superClass);
 
   function FaceGeometry(options) {
@@ -64551,7 +65407,7 @@ FaceGeometry = (function(superClass) {
     return;
   }
 
-  FaceGeometry.prototype.clip = function(width, height, depth, items) {
+  FaceGeometry.prototype.clip = function (width, height, depth, items) {
     var sides;
     if (width == null) {
       width = this.width;
@@ -64571,22 +65427,31 @@ FaceGeometry = (function(superClass) {
   };
 
   return FaceGeometry;
-
-})(ClipGeometry);
+}(ClipGeometry);
 
 module.exports = FaceGeometry;
 
 },{"./clipgeometry":123}],125:[function(require,module,exports){
-var Geometry, debug, tick,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+"use strict";
+
+var Geometry,
+    debug,
+    tick,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 debug = false;
 
-tick = function() {
+tick = function tick() {
   var now;
-  now = +(new Date);
-  return function(label) {
+  now = +new Date();
+  return function (label) {
     var delta;
     delta = +new Date() - now;
     console.log(label, delta + " ms");
@@ -64594,7 +65459,7 @@ tick = function() {
   };
 };
 
-Geometry = (function(superClass) {
+Geometry = function (superClass) {
   extend(Geometry, superClass);
 
   function Geometry() {
@@ -64612,7 +65477,7 @@ Geometry = (function(superClass) {
     this.limit = 0xFFFF;
   }
 
-  Geometry.prototype._reduce = function(dims, maxs) {
+  Geometry.prototype._reduce = function (dims, maxs) {
     var dim, i, j, len, max, multiple, quads;
     multiple = false;
     for (i = j = 0, len = dims.length; j < len; i = ++j) {
@@ -64625,30 +65490,30 @@ Geometry = (function(superClass) {
         multiple = true;
       }
     }
-    return quads = dims.reduce(function(a, b) {
+    return quads = dims.reduce(function (a, b) {
       return a * b;
     });
   };
 
-  Geometry.prototype._emitter = function(name) {
+  Geometry.prototype._emitter = function (name) {
     var array, attribute, dimensions, four, offset, one, three, two;
     attribute = this.attributes[name];
     dimensions = attribute.itemSize;
     array = attribute.array;
     offset = 0;
-    one = function(a) {
+    one = function one(a) {
       return array[offset++] = a;
     };
-    two = function(a, b) {
+    two = function two(a, b) {
       array[offset++] = a;
       return array[offset++] = b;
     };
-    three = function(a, b, c) {
+    three = function three(a, b, c) {
       array[offset++] = a;
       array[offset++] = b;
       return array[offset++] = c;
     };
-    four = function(a, b, c, d) {
+    four = function four(a, b, c, d) {
       array[offset++] = a;
       array[offset++] = b;
       array[offset++] = c;
@@ -64657,7 +65522,7 @@ Geometry = (function(superClass) {
     return [null, one, two, three, four][dimensions];
   };
 
-  Geometry.prototype._autochunk = function() {
+  Geometry.prototype._autochunk = function () {
     var array, attribute, indexed, name, numItems, ref;
     indexed = this.attributes.index;
     ref = this.attributes;
@@ -64677,7 +65542,7 @@ Geometry = (function(superClass) {
     }
   };
 
-  Geometry.prototype._finalize = function() {
+  Geometry.prototype._finalize = function () {
     var attrib;
     if (!this.chunked) {
       return;
@@ -64690,13 +65555,13 @@ Geometry = (function(superClass) {
     }
   };
 
-  Geometry.prototype._chunks = function(array, limit) {
+  Geometry.prototype._chunks = function (array, limit) {
     var a, b, chunks, end, i, j, j1, j2, j3, jmax, jmin, last, n, o, push, ref, start;
     chunks = [];
     last = 0;
     start = array[0];
     end = array[0];
-    push = function(i) {
+    push = function push(i) {
       var _count, _end, _start;
       _start = last * 3;
       _end = i * 3;
@@ -64731,7 +65596,7 @@ Geometry = (function(superClass) {
     return chunks;
   };
 
-  Geometry.prototype._chunkify = function(attrib, chunks) {
+  Geometry.prototype._chunkify = function (attrib, chunks) {
     var chunk, from, i, j, k, len, offset, ref, ref1, to;
     if (!attrib.u16) {
       return;
@@ -64749,7 +65614,7 @@ Geometry = (function(superClass) {
     return delete attrib.u16;
   };
 
-  Geometry.prototype._offsets = function(offsets) {
+  Geometry.prototype._offsets = function (offsets) {
     var _end, _start, chunk, chunks, end, j, k, len, len1, offset, out, start;
     if (!this.chunked) {
       this.offsets = offsets;
@@ -64781,12 +65646,13 @@ Geometry = (function(superClass) {
   };
 
   return Geometry;
-
-})(THREE.BufferGeometry);
+}(THREE.BufferGeometry);
 
 module.exports = Geometry;
 
 },{}],126:[function(require,module,exports){
+'use strict';
+
 exports.Geometry = require('./geometry');
 exports.ArrowGeometry = require('./arrowgeometry');
 exports.FaceGeometry = require('./facegeometry');
@@ -64797,12 +65663,20 @@ exports.StripGeometry = require('./stripgeometry');
 exports.SurfaceGeometry = require('./surfacegeometry');
 
 },{"./arrowgeometry":122,"./facegeometry":124,"./geometry":125,"./linegeometry":127,"./screengeometry":128,"./spritegeometry":129,"./stripgeometry":130,"./surfacegeometry":131}],127:[function(require,module,exports){
-var ClipGeometry, LineGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ClipGeometry,
+    LineGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 ClipGeometry = require('./clipgeometry');
-
 
 /*
 Line strips arranged in columns and rows
@@ -64814,7 +65688,7 @@ Line strips arranged in columns and rows
 +----+ +----+ +----+ +----+
  */
 
-LineGeometry = (function(superClass) {
+LineGeometry = function (superClass) {
   extend(LineGeometry, superClass);
 
   function LineGeometry(options) {
@@ -64865,9 +65739,9 @@ LineGeometry = (function(superClass) {
         base += 2;
       }
     }
-    edger = closed ? function() {
+    edger = closed ? function () {
       return 0;
-    } : function(x) {
+    } : function (x) {
       if (x === 0) {
         return -1;
       } else if (x === samples - 1) {
@@ -64935,7 +65809,7 @@ LineGeometry = (function(superClass) {
     return;
   }
 
-  LineGeometry.prototype.clip = function(samples, strips, ribbons, layers) {
+  LineGeometry.prototype.clip = function (samples, strips, ribbons, layers) {
     var segments, vertices;
     if (samples == null) {
       samples = this.samples - this.closed;
@@ -64957,18 +65831,25 @@ LineGeometry = (function(superClass) {
   };
 
   return LineGeometry;
-
-})(ClipGeometry);
+}(ClipGeometry);
 
 module.exports = LineGeometry;
 
 },{"./clipgeometry":123}],128:[function(require,module,exports){
-var ScreenGeometry, SurfaceGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ScreenGeometry,
+    SurfaceGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 SurfaceGeometry = require('./surfacegeometry');
-
 
 /*
 Grid Surface in normalized screen space
@@ -64986,7 +65867,7 @@ Grid Surface in normalized screen space
 +----+----+----+----+
  */
 
-ScreenGeometry = (function(superClass) {
+ScreenGeometry = function (superClass) {
   extend(ScreenGeometry, superClass);
 
   function ScreenGeometry(options) {
@@ -64996,7 +65877,7 @@ ScreenGeometry = (function(superClass) {
     }
     this.uniforms.geometryScale = {
       type: 'v4',
-      value: new THREE.Vector4
+      value: new THREE.Vector4()
     };
     options.width = Math.max(2, (ref = +options.width) != null ? ref : 2);
     options.height = Math.max(2, (ref1 = +options.height) != null ? ref1 : 2);
@@ -65004,14 +65885,14 @@ ScreenGeometry = (function(superClass) {
     ScreenGeometry.__super__.constructor.call(this, options);
   }
 
-  ScreenGeometry.prototype.cover = function(scaleX, scaleY, scaleZ, scaleW) {
+  ScreenGeometry.prototype.cover = function (scaleX, scaleY, scaleZ, scaleW) {
     this.scaleX = scaleX != null ? scaleX : 1;
     this.scaleY = scaleY != null ? scaleY : 1;
     this.scaleZ = scaleZ != null ? scaleZ : 1;
     this.scaleW = scaleW != null ? scaleW : 1;
   };
 
-  ScreenGeometry.prototype.clip = function(width, height, surfaces, layers) {
+  ScreenGeometry.prototype.clip = function (width, height, surfaces, layers) {
     var invert;
     if (width == null) {
       width = this.width;
@@ -65026,25 +65907,32 @@ ScreenGeometry = (function(superClass) {
       layers = this.layers;
     }
     ScreenGeometry.__super__.clip.call(this, width, height, surfaces, layers);
-    invert = function(x) {
+    invert = function invert(x) {
       return 1 / Math.max(1, x - 1);
     };
     return this.uniforms.geometryScale.value.set(invert(width) * this.scaleX, invert(height) * this.scaleY, invert(surfaces) * this.scaleZ, invert(layers) * this.scaleW);
   };
 
   return ScreenGeometry;
-
-})(SurfaceGeometry);
+}(SurfaceGeometry);
 
 module.exports = ScreenGeometry;
 
 },{"./surfacegeometry":131}],129:[function(require,module,exports){
-var ClipGeometry, SpriteGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ClipGeometry,
+    SpriteGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 ClipGeometry = require('./clipgeometry');
-
 
 /*
 Render points as quads
@@ -65062,7 +65950,7 @@ Render points as quads
 +----+  +----+  +----+  +----+
  */
 
-SpriteGeometry = (function(superClass) {
+SpriteGeometry = function (superClass) {
   extend(SpriteGeometry, superClass);
 
   function SpriteGeometry(options) {
@@ -65112,7 +66000,7 @@ SpriteGeometry = (function(superClass) {
     return;
   }
 
-  SpriteGeometry.prototype.clip = function(width, height, depth, items) {
+  SpriteGeometry.prototype.clip = function (width, height, depth, items) {
     if (width == null) {
       width = this.width;
     }
@@ -65130,18 +66018,25 @@ SpriteGeometry = (function(superClass) {
   };
 
   return SpriteGeometry;
-
-})(ClipGeometry);
+}(ClipGeometry);
 
 module.exports = SpriteGeometry;
 
 },{"./clipgeometry":123}],130:[function(require,module,exports){
-var ClipGeometry, StripGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ClipGeometry,
+    StripGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 ClipGeometry = require('./clipgeometry');
-
 
 /*
 Triangle strips arranged in items, columns and rows
@@ -65159,7 +66054,7 @@ Triangle strips arranged in items, columns and rows
 +--+--+/    +--+--+/    +--+--+/    +--+--+/
  */
 
-StripGeometry = (function(superClass) {
+StripGeometry = function (superClass) {
   extend(StripGeometry, superClass);
 
   function StripGeometry(options) {
@@ -65219,7 +66114,7 @@ StripGeometry = (function(superClass) {
     return;
   }
 
-  StripGeometry.prototype.clip = function(width, height, depth, items) {
+  StripGeometry.prototype.clip = function (width, height, depth, items) {
     var sides;
     if (width == null) {
       width = this.width;
@@ -65239,18 +66134,25 @@ StripGeometry = (function(superClass) {
   };
 
   return StripGeometry;
-
-})(ClipGeometry);
+}(ClipGeometry);
 
 module.exports = StripGeometry;
 
 },{"./clipgeometry":123}],131:[function(require,module,exports){
-var ClipGeometry, SurfaceGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var ClipGeometry,
+    SurfaceGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 ClipGeometry = require('./clipgeometry');
-
 
 /*
 Grid Surface
@@ -65268,7 +66170,7 @@ Grid Surface
 +----+----+----+----+
  */
 
-SurfaceGeometry = (function(superClass) {
+SurfaceGeometry = function (superClass) {
   extend(SurfaceGeometry, superClass);
 
   function SurfaceGeometry(options) {
@@ -65311,9 +66213,9 @@ SurfaceGeometry = (function(superClass) {
       }
       base += width;
     }
-    edgerX = closedX ? function() {
+    edgerX = closedX ? function () {
       return 0;
-    } : function(x) {
+    } : function (x) {
       if (x === 0) {
         return -1;
       } else if (x === segmentsX) {
@@ -65322,9 +66224,9 @@ SurfaceGeometry = (function(superClass) {
         return 0;
       }
     };
-    edgerY = closedY ? function() {
+    edgerY = closedY ? function () {
       return 0;
-    } : function(y) {
+    } : function (y) {
       if (y === 0) {
         return -1;
       } else if (y === segmentsY) {
@@ -65356,7 +66258,7 @@ SurfaceGeometry = (function(superClass) {
     return;
   }
 
-  SurfaceGeometry.prototype.clip = function(width, height, surfaces, layers) {
+  SurfaceGeometry.prototype.clip = function (width, height, surfaces, layers) {
     var segmentsX, segmentsY;
     if (width == null) {
       width = this.width;
@@ -65376,7 +66278,7 @@ SurfaceGeometry = (function(superClass) {
     return this._clipOffsets(6, segmentsX, segmentsY, surfaces, layers, this.segmentsX, this.segmentsY, this.surfaces, this.layers);
   };
 
-  SurfaceGeometry.prototype.map = function(width, height, surfaces, layers) {
+  SurfaceGeometry.prototype.map = function (width, height, surfaces, layers) {
     if (width == null) {
       width = this.width;
     }
@@ -65393,27 +66295,38 @@ SurfaceGeometry = (function(superClass) {
   };
 
   return SurfaceGeometry;
-
-})(ClipGeometry);
+}(ClipGeometry);
 
 module.exports = SurfaceGeometry;
 
 },{"./clipgeometry":123}],132:[function(require,module,exports){
+'use strict';
+
 exports.Scene = require('./scene');
 exports.Factory = require('./factory');
 exports.Renderable = require('./scene');
 exports.Classes = require('./classes');
-	
+
 },{"./classes":120,"./factory":121,"./scene":145}],133:[function(require,module,exports){
-var Arrow, ArrowGeometry, Base,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Arrow,
+    ArrowGeometry,
+    Base,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
 ArrowGeometry = require('../geometry').ArrowGeometry;
 
-Arrow = (function(superClass) {
+Arrow = function (superClass) {
   extend(Arrow, superClass);
 
   function Arrow(renderer, shaders, options) {
@@ -65451,7 +66364,7 @@ Arrow = (function(superClass) {
     this.renders = [object];
   }
 
-  Arrow.prototype.dispose = function() {
+  Arrow.prototype.dispose = function () {
     this.geometry.dispose();
     this.material.dispose();
     this.renders = this.geometry = this.material = null;
@@ -65459,21 +66372,30 @@ Arrow = (function(superClass) {
   };
 
   return Arrow;
-
-})(Base);
+}(Base);
 
 module.exports = Arrow;
 
 },{"../geometry":126,"./base":134}],134:[function(require,module,exports){
-var Base, Renderable, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Renderable,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Renderable = require('../renderable');
 
 Util = require('../../util');
 
-Base = (function(superClass) {
+Base = function (superClass) {
   extend(Base, superClass);
 
   function Base(renderer, shaders, options) {
@@ -65482,7 +66404,7 @@ Base = (function(superClass) {
     this.zUnits = (ref = options.zUnits) != null ? ref : 0;
   }
 
-  Base.prototype.raw = function() {
+  Base.prototype.raw = function () {
     var i, len, object, ref;
     ref = this.renders;
     for (i = 0, len = ref.length; i < len; i++) {
@@ -65492,7 +66414,7 @@ Base = (function(superClass) {
     return null;
   };
 
-  Base.prototype.depth = function(write, test) {
+  Base.prototype.depth = function (write, test) {
     var i, len, object, ref;
     ref = this.renders;
     for (i = 0, len = ref.length; i < len; i++) {
@@ -65502,7 +66424,7 @@ Base = (function(superClass) {
     return null;
   };
 
-  Base.prototype.polygonOffset = function(factor, units) {
+  Base.prototype.polygonOffset = function (factor, units) {
     var i, len, object, ref;
     ref = this.renders;
     for (i = 0, len = ref.length; i < len; i++) {
@@ -65512,7 +66434,7 @@ Base = (function(superClass) {
     return null;
   };
 
-  Base.prototype.show = function(transparent, blending, order) {
+  Base.prototype.show = function (transparent, blending, order) {
     var i, len, object, ref, results;
     ref = this.renders;
     results = [];
@@ -65523,7 +66445,7 @@ Base = (function(superClass) {
     return results;
   };
 
-  Base.prototype.hide = function() {
+  Base.prototype.hide = function () {
     var i, len, object, ref;
     ref = this.renders;
     for (i = 0, len = ref.length; i < len; i++) {
@@ -65533,7 +66455,7 @@ Base = (function(superClass) {
     return null;
   };
 
-  Base.prototype._material = function(options) {
+  Base.prototype._material = function (options) {
     var fragmentPrefix, i, key, len, material, precision, ref, vertexPrefix;
     precision = this.renderer.getPrecision();
     vertexPrefix = "    precision " + precision + " float;\n    precision " + precision + " int;\nuniform mat4 modelMatrix;\nuniform mat4 modelViewMatrix;\nuniform mat4 projectionMatrix;\nuniform mat4 viewMatrix;\nuniform mat3 normalMatrix;\nuniform vec3 cameraPosition;";
@@ -65549,21 +66471,21 @@ Base = (function(superClass) {
     return material;
   };
 
-  Base.prototype._raw = function(object) {
+  Base.prototype._raw = function (object) {
     object.rotationAutoUpdate = false;
     object.frustumCulled = false;
     object.matrixAutoUpdate = false;
     return object.material.defaultAttributeValues = void 0;
   };
 
-  Base.prototype._depth = function(object, write, test) {
+  Base.prototype._depth = function (object, write, test) {
     var m;
     m = object.material;
     m.depthWrite = write;
     return m.depthTest = test;
   };
 
-  Base.prototype._polygonOffset = function(object, factor, units) {
+  Base.prototype._polygonOffset = function (object, factor, units) {
     var enabled, m;
     units -= this.zUnits;
     enabled = units !== 0;
@@ -65575,7 +66497,7 @@ Base = (function(superClass) {
     }
   };
 
-  Base.prototype._show = function(object, transparent, blending, order) {
+  Base.prototype._show = function (object, transparent, blending, order) {
     var m;
     transparent = true;
     m = object.material;
@@ -65586,11 +66508,11 @@ Base = (function(superClass) {
     return null;
   };
 
-  Base.prototype._hide = function(object) {
+  Base.prototype._hide = function (object) {
     return object.visible = false;
   };
 
-  Base.prototype._vertexColor = function(color, mask) {
+  Base.prototype._vertexColor = function (color, mask) {
     var v;
     if (!(color || mask)) {
       return;
@@ -65607,10 +66529,10 @@ Base = (function(superClass) {
     return v;
   };
 
-  Base.prototype._vertexPosition = function(position, material, map, channels, stpq) {
+  Base.prototype._vertexPosition = function (position, material, map, channels, stpq) {
     var defs, v;
     v = this.shaders.shader();
-    if (map || (material && material !== true)) {
+    if (map || material && material !== true) {
       defs = {};
       if (channels > 0 || stpq) {
         defs.POSITION_MAP = '';
@@ -65626,7 +66548,7 @@ Base = (function(superClass) {
     return v.pipe('mesh.vertex.position', this.uniforms, defs);
   };
 
-  Base.prototype._fragmentColor = function(hasStyle, material, color, mask, map, channels, stpq, combine, linear) {
+  Base.prototype._fragmentColor = function (hasStyle, material, color, mask, map, channels, stpq, combine, linear) {
     var defs, f, gamma, join;
     f = this.shaders.shader();
     join = false;
@@ -65710,19 +66632,27 @@ Base = (function(superClass) {
   };
 
   return Base;
-
-})(Renderable);
+}(Renderable);
 
 module.exports = Base;
 
 },{"../../util":158,"../renderable":144}],135:[function(require,module,exports){
-var Base, Debug,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Debug,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
-Debug = (function(superClass) {
+Debug = function (superClass) {
   extend(Debug, superClass);
 
   function Debug(renderer, shaders, options) {
@@ -65742,7 +66672,7 @@ Debug = (function(superClass) {
     this.objects = [object];
   }
 
-  Debug.prototype.dispose = function() {
+  Debug.prototype.dispose = function () {
     this.geometry.dispose();
     this.material.dispose();
     this.objects = this.geometry = this.material = null;
@@ -65750,21 +66680,30 @@ Debug = (function(superClass) {
   };
 
   return Debug;
-
-})(Base);
+}(Base);
 
 module.exports = Debug;
 
 },{"./base":134}],136:[function(require,module,exports){
-var Base, Face, FaceGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Face,
+    FaceGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
 FaceGeometry = require('../geometry').FaceGeometry;
 
-Face = (function(superClass) {
+Face = function (superClass) {
   extend(Face, superClass);
 
   function Face(renderer, shaders, options) {
@@ -65807,7 +66746,7 @@ Face = (function(superClass) {
     this.renders = [object];
   }
 
-  Face.prototype.dispose = function() {
+  Face.prototype.dispose = function () {
     this.geometry.dispose();
     this.material.dispose();
     this.renders = this.geometry = this.material = null;
@@ -65815,21 +66754,30 @@ Face = (function(superClass) {
   };
 
   return Face;
-
-})(Base);
+}(Base);
 
 module.exports = Face;
 
 },{"../geometry":126,"./base":134}],137:[function(require,module,exports){
-var Base, Line, LineGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Line,
+    LineGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
 LineGeometry = require('../geometry').LineGeometry;
 
-Line = (function(superClass) {
+Line = function (superClass) {
   extend(Line, superClass);
 
   function Line(renderer, shaders, options) {
@@ -65898,7 +66846,7 @@ Line = (function(superClass) {
     this.renders = [object];
   }
 
-  Line.prototype.dispose = function() {
+  Line.prototype.dispose = function () {
     this.geometry.dispose();
     this.material.dispose();
     this.renders = this.geometry = this.material = null;
@@ -65906,30 +66854,39 @@ Line = (function(superClass) {
   };
 
   return Line;
-
-})(Base);
+}(Base);
 
 module.exports = Line;
 
 },{"../geometry":126,"./base":134}],138:[function(require,module,exports){
-var MemoScreen, Screen, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var MemoScreen,
+    Screen,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Screen = require('./screen');
 
 Util = require('../../util');
 
-MemoScreen = (function(superClass) {
+MemoScreen = function (superClass) {
   extend(MemoScreen, superClass);
 
   function MemoScreen(renderer, shaders, options) {
     var depth, height, i, inv, inv1, items, len, map, object, ref, stpq, width;
     this.memo = (items = options.items, width = options.width, height = options.height, depth = options.depth, stpq = options.stpq, options);
-    inv = function(x) {
+    inv = function inv(x) {
       return 1 / Math.max(1, x);
     };
-    inv1 = function(x) {
+    inv1 = function inv1(x) {
       return 1 / Math.max(1, x - 1);
     };
     this.uniforms = {
@@ -65970,7 +66927,7 @@ MemoScreen = (function(superClass) {
     null;
   }
 
-  MemoScreen.prototype.cover = function(width, height, depth, items) {
+  MemoScreen.prototype.cover = function (width, height, depth, items) {
     var inv1, x, y;
     if (width == null) {
       width = this.memo.width;
@@ -65984,7 +66941,7 @@ MemoScreen = (function(superClass) {
     if (items == null) {
       items = this.memo.items;
     }
-    inv1 = function(x) {
+    inv1 = function inv1(x) {
       return 1 / Math.max(1, x - 1);
     };
     this.uniforms.remapSTPQScale.value.set(inv1(width), inv1(height), inv1(depth), inv1(items));
@@ -65997,21 +66954,30 @@ MemoScreen = (function(superClass) {
   };
 
   return MemoScreen;
-
-})(Screen);
+}(Screen);
 
 module.exports = MemoScreen;
 
 },{"../../util":158,"./screen":140}],139:[function(require,module,exports){
-var Base, Point, SpriteGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Point,
+    SpriteGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
 SpriteGeometry = require('../geometry').SpriteGeometry;
 
-Point = (function(superClass) {
+Point = function (superClass) {
   extend(Point, superClass);
 
   function Point(renderer, shaders, options) {
@@ -66084,12 +67050,12 @@ Point = (function(superClass) {
     this.renders = [this.fillObject, this.edgeObject];
   }
 
-  Point.prototype.show = function(transparent, blending, order, depth) {
+  Point.prototype.show = function (transparent, blending, order, depth) {
     this._show(this.edgeObject, true, blending, order, depth);
     return this._show(this.fillObject, transparent, blending, order, depth);
   };
 
-  Point.prototype.dispose = function() {
+  Point.prototype.dispose = function () {
     this.geometry.dispose();
     this.edgeMaterial.dispose();
     this.fillMaterial.dispose();
@@ -66098,15 +67064,25 @@ Point = (function(superClass) {
   };
 
   return Point;
-
-})(Base);
+}(Base);
 
 module.exports = Point;
 
 },{"../geometry":126,"./base":134}],140:[function(require,module,exports){
-var Base, Screen, ScreenGeometry, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Screen,
+    ScreenGeometry,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
@@ -66114,7 +67090,7 @@ ScreenGeometry = require('../geometry').ScreenGeometry;
 
 Util = require('../../util');
 
-Screen = (function(superClass) {
+Screen = function (superClass) {
   extend(Screen, superClass);
 
   function Screen(renderer, shaders, options) {
@@ -66150,7 +67126,7 @@ Screen = (function(superClass) {
     this.renders = [object];
   }
 
-  Screen.prototype.dispose = function() {
+  Screen.prototype.dispose = function () {
     this.geometry.dispose();
     this.material.dispose();
     this.renders = this.geometry = this.material = null;
@@ -66158,21 +67134,30 @@ Screen = (function(superClass) {
   };
 
   return Screen;
-
-})(Base);
+}(Base);
 
 module.exports = Screen;
 
 },{"../../util":158,"../geometry":126,"./base":134}],141:[function(require,module,exports){
-var Base, Sprite, SpriteGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Sprite,
+    SpriteGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
 SpriteGeometry = require('../geometry').SpriteGeometry;
 
-Sprite = (function(superClass) {
+Sprite = function (superClass) {
   extend(Sprite, superClass);
 
   function Sprite(renderer, shaders, options) {
@@ -66220,12 +67205,12 @@ Sprite = (function(superClass) {
     this.renders = [this.fillObject, this.edgeObject];
   }
 
-  Sprite.prototype.show = function(transparent, blending, order, depth) {
+  Sprite.prototype.show = function (transparent, blending, order, depth) {
     this._show(this.edgeObject, true, blending, order, depth);
     return this._show(this.fillObject, transparent, blending, order, depth);
   };
 
-  Sprite.prototype.dispose = function() {
+  Sprite.prototype.dispose = function () {
     this.geometry.dispose();
     this.edgeMaterial.dispose();
     this.fillMaterial.dispose();
@@ -66234,21 +67219,30 @@ Sprite = (function(superClass) {
   };
 
   return Sprite;
-
-})(Base);
+}(Base);
 
 module.exports = Sprite;
 
 },{"../geometry":126,"./base":134}],142:[function(require,module,exports){
-var Base, Strip, StripGeometry,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Strip,
+    StripGeometry,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
 StripGeometry = require('../geometry').StripGeometry;
 
-Strip = (function(superClass) {
+Strip = function (superClass) {
   extend(Strip, superClass);
 
   function Strip(renderer, shaders, options) {
@@ -66291,7 +67285,7 @@ Strip = (function(superClass) {
     this.renders = [object];
   }
 
-  Strip.prototype.dispose = function() {
+  Strip.prototype.dispose = function () {
     this.geometry.dispose();
     this.material.dispose();
     this.renders = this.geometry = this.material = null;
@@ -66299,15 +67293,25 @@ Strip = (function(superClass) {
   };
 
   return Strip;
-
-})(Base);
+}(Base);
 
 module.exports = Strip;
 
 },{"../geometry":126,"./base":134}],143:[function(require,module,exports){
-var Base, Surface, SurfaceGeometry, Util,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
+'use strict';
+
+var Base,
+    Surface,
+    SurfaceGeometry,
+    Util,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty;
 
 Base = require('./base');
 
@@ -66315,7 +67319,7 @@ SurfaceGeometry = require('../geometry').SurfaceGeometry;
 
 Util = require('../../util');
 
-Surface = (function(superClass) {
+Surface = function (superClass) {
   extend(Surface, superClass);
 
   function Surface(renderer, shaders, options) {
@@ -66366,7 +67370,7 @@ Surface = (function(superClass) {
     this.renders = [object];
   }
 
-  Surface.prototype.dispose = function() {
+  Surface.prototype.dispose = function () {
     this.geometry.dispose();
     this.material.dispose();
     this.renders = this.geometry = this.material = null;
@@ -66374,15 +67378,16 @@ Surface = (function(superClass) {
   };
 
   return Surface;
-
-})(Base);
+}(Base);
 
 module.exports = Surface;
 
 },{"../../util":158,"../geometry":126,"./base":134}],144:[function(require,module,exports){
+"use strict";
+
 var Renderable;
 
-Renderable = (function() {
+Renderable = function () {
   function Renderable(renderer, shaders) {
     this.renderer = renderer;
     this.shaders = shaders;
@@ -66392,11 +67397,11 @@ Renderable = (function() {
     }
   }
 
-  Renderable.prototype.dispose = function() {
+  Renderable.prototype.dispose = function () {
     return this.uniforms = null;
   };
 
-  Renderable.prototype._adopt = function(uniforms) {
+  Renderable.prototype._adopt = function (uniforms) {
     var key, value;
     for (key in uniforms) {
       value = uniforms[key];
@@ -66404,7 +67409,7 @@ Renderable = (function() {
     }
   };
 
-  Renderable.prototype._set = function(uniforms) {
+  Renderable.prototype._set = function (uniforms) {
     var key, value;
     for (key in uniforms) {
       value = uniforms[key];
@@ -66415,25 +67420,37 @@ Renderable = (function() {
   };
 
   return Renderable;
-
-})();
+}();
 
 module.exports = Renderable;
 
 },{}],145:[function(require,module,exports){
-var MathBox, Renderable, Scene,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty,
-  indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
+'use strict';
+
+var MathBox,
+    Renderable,
+    Scene,
+    extend = function extend(child, parent) {
+  for (var key in parent) {
+    if (hasProp.call(parent, key)) child[key] = parent[key];
+  }function ctor() {
+    this.constructor = child;
+  }ctor.prototype = parent.prototype;child.prototype = new ctor();child.__super__ = parent.prototype;return child;
+},
+    hasProp = {}.hasOwnProperty,
+    indexOf = [].indexOf || function (item) {
+  for (var i = 0, l = this.length; i < l; i++) {
+    if (i in this && this[i] === item) return i;
+  }return -1;
+};
 
 Renderable = require('./renderable');
-
 
 /*
  All MathBox renderables sit inside this root, to keep things tidy.
  */
 
-MathBox = (function(superClass) {
+MathBox = function (superClass) {
   extend(MathBox, superClass);
 
   function MathBox() {
@@ -66444,9 +67461,7 @@ MathBox = (function(superClass) {
   }
 
   return MathBox;
-
-})(THREE.Object3D);
-
+}(THREE.Object3D);
 
 /*
  Holds the root and binds to a THREE.Scene
@@ -66457,37 +67472,37 @@ MathBox = (function(superClass) {
  Will render injected objects to a 1x1 scratch buffer to ensure availability
  */
 
-Scene = (function(superClass) {
+Scene = function (superClass) {
   extend(Scene, superClass);
 
   function Scene(renderer, shaders, options) {
     Scene.__super__.constructor.call(this, renderer, shaders, options);
-    this.root = new MathBox;
+    this.root = new MathBox();
     if ((options != null ? options.scene : void 0) != null) {
       this.scene = options.scene;
     }
     if (this.scene == null) {
-      this.scene = new THREE.Scene;
+      this.scene = new THREE.Scene();
     }
     this.pending = [];
     this.async = 0;
     this.scratch = new THREE.WebGLRenderTarget(1, 1);
-    this.camera = new THREE.PerspectiveCamera;
+    this.camera = new THREE.PerspectiveCamera();
   }
 
-  Scene.prototype.inject = function(scene) {
+  Scene.prototype.inject = function (scene) {
     if (scene != null) {
       this.scene = scene;
     }
     return this.scene.add(this.root);
   };
 
-  Scene.prototype.unject = function() {
+  Scene.prototype.unject = function () {
     var ref;
     return (ref = this.scene) != null ? ref.remove(this.root) : void 0;
   };
 
-  Scene.prototype.add = function(object) {
+  Scene.prototype.add = function (object) {
     if (this.async) {
       return this.pending.push(object);
     } else {
@@ -66495,8 +67510,8 @@ Scene = (function(superClass) {
     }
   };
 
-  Scene.prototype.remove = function(object) {
-    this.pending = this.pending.filter(function(o) {
+  Scene.prototype.remove = function (object) {
+    this.pending = this.pending.filter(function (o) {
       return o !== object;
     });
     if (object.parent != null) {
@@ -66504,25 +67519,25 @@ Scene = (function(superClass) {
     }
   };
 
-  Scene.prototype._add = function(object) {
+  Scene.prototype._add = function (object) {
     return this.root.add(object);
   };
 
-  Scene.prototype._remove = function(object) {
+  Scene.prototype._remove = function (object) {
     return this.root.remove(object);
   };
 
-  Scene.prototype.dispose = function() {
+  Scene.prototype.dispose = function () {
     if (this.root.parent != null) {
       return this.unject();
     }
   };
 
-  Scene.prototype.warmup = function(n) {
+  Scene.prototype.warmup = function (n) {
     return this.async = +n || 0;
   };
 
-  Scene.prototype.render = function() {
+  Scene.prototype.render = function () {
     var added, children, i, j, pending, ref, visible;
     if (!this.pending.length) {
       return;
@@ -66537,37 +67552,38 @@ Scene = (function(superClass) {
       this._add(pending);
       added.push(added);
     }
-    visible = children.map(function(o) {
+    visible = children.map(function (o) {
       var v;
       return v = o.visible;
     });
-    children.map(function(o) {
+    children.map(function (o) {
       return o.visible = indexOf.call(added, o) < 0;
     });
     this.renderer.render(this.scene, this.camera, this.scratch);
-    return children.map(function(o, i) {
+    return children.map(function (o, i) {
       return o.visible = visible[i];
     });
   };
 
-  Scene.prototype.toJSON = function() {
+  Scene.prototype.toJSON = function () {
     return this.root.toJSON();
   };
 
   return Scene;
-
-})(Renderable);
+}(Renderable);
 
 module.exports = Scene;
 
 },{"./renderable":144}],146:[function(require,module,exports){
+'use strict';
+
 var Factory, ShaderGraph;
 
 ShaderGraph = require('../../vendor/shadergraph/src');
 
-Factory = function(snippets) {
+Factory = function Factory(snippets) {
   var fetch;
-  fetch = function(name) {
+  fetch = function fetch(name) {
     var element, ref, ref1, s, sel;
     s = snippets[name];
     if (s != null) {
@@ -66576,7 +67592,7 @@ Factory = function(snippets) {
     ref = (ref1 = name[0]) === '#' || ref1 === '.' || ref1 === ':' || ref1 === '[';
     sel = ref ? name : "#" + name;
     element = document.querySelector(sel);
-    if ((element != null) && element.tagName === 'SCRIPT') {
+    if (element != null && element.tagName === 'SCRIPT') {
       return element.textContent || element.innerText;
     }
     throw new Error("Unknown shader `" + name + "`");
@@ -66589,25 +67605,29 @@ Factory = function(snippets) {
 module.exports = Factory;
 
 },{"../../vendor/shadergraph/src":208}],147:[function(require,module,exports){
+'use strict';
+
 exports.Factory = require('./factory');
 exports.Snippets = require('../../build/shaders');
 
 },{"../../build/shaders":1,"./factory":146}],148:[function(require,module,exports){
+'use strict';
+
 THREE.Bootstrap.registerPlugin('splash', {
   defaults: {
     color: 'mono',
     fancy: true
   },
   listen: ['ready', 'mathbox/init:init', 'mathbox/progress:progress', 'mathbox/destroy:destroy'],
-  uninstall: function() {
+  uninstall: function uninstall() {
     return this.destroy();
   },
-  ready: function(event, three) {
+  ready: function ready(event, three) {
     if (three.MathBox && !this.div) {
       return init(event, three);
     }
   },
-  init: function(event, three) {
+  init: function init(event, three) {
     var color, div, html, l, x, y, z;
     this.destroy();
     color = this.options.color;
@@ -66627,7 +67647,7 @@ THREE.Bootstrap.registerPlugin('splash', {
     this.start = three.Time.now;
     return this.timer = null;
   },
-  progress: function(event, three) {
+  progress: function progress(event, three) {
     var current, el, f, i, increment, k, len, ref, results, t, total, visible, weights, width;
     if (!this.div) {
       return;
@@ -66640,23 +67660,23 @@ THREE.Bootstrap.registerPlugin('splash', {
       this.loader.style.display = 'block';
     } else {
       this.loader.classList.add('mathbox-exit');
-      this.timer = setTimeout(((function(_this) {
-        return function() {
+      this.timer = setTimeout(function (_this) {
+        return function () {
           return _this.loader.style.display = 'none';
         };
-      })(this)), 150);
+      }(this), 150);
     }
-    width = current < total ? (Math.round(1000 * current / total) * .1) + '%' : '100%';
+    width = current < total ? Math.round(1000 * current / total) * .1 + '%' : '100%';
     this.bar.style.width = width;
     if (this.options.fancy) {
       weights = this.random;
       f = Math.max(0, Math.min(1, three.Time.now - this.start));
-      increment = function(transform, j) {
+      increment = function increment(transform, j) {
         if (j == null) {
           j = 0;
         }
-        return transform.replace(/(-?[0-9.e]+)deg/g, function(_, n) {
-          return (+n + weights[j++] * f * three.Time.step * 60) + 'deg';
+        return transform.replace(/(-?[0-9.e]+)deg/g, function (_, n) {
+          return +n + weights[j++] * f * three.Time.step * 60 + 'deg';
         });
       };
       ref = this.gyro;
@@ -66669,7 +67689,7 @@ THREE.Bootstrap.registerPlugin('splash', {
       return results;
     }
   },
-  destroy: function() {
+  destroy: function destroy() {
     var ref;
     if ((ref = this.div) != null) {
       ref.remove();
@@ -66679,26 +67699,28 @@ THREE.Bootstrap.registerPlugin('splash', {
 });
 
 },{}],149:[function(require,module,exports){
+"use strict";
+
 var Animation, Animator, Ease;
 
 Ease = require('../util').Ease;
 
-Animator = (function() {
+Animator = function () {
   function Animator(context) {
     this.context = context;
     this.anims = [];
   }
 
-  Animator.prototype.make = function(type, options) {
+  Animator.prototype.make = function (type, options) {
     var anim;
     anim = new Animation(this, this.context.time, type, options);
     this.anims.push(anim);
     return anim;
   };
 
-  Animator.prototype.unmake = function(anim) {
+  Animator.prototype.unmake = function (anim) {
     var a;
-    return this.anims = (function() {
+    return this.anims = function () {
       var i, len, ref, results;
       ref = this.anims;
       results = [];
@@ -66709,13 +67731,13 @@ Animator = (function() {
         }
       }
       return results;
-    }).call(this);
+    }.call(this);
   };
 
-  Animator.prototype.update = function() {
+  Animator.prototype.update = function () {
     var anim, time;
     time = this.context.time;
-    return this.anims = (function() {
+    return this.anims = function () {
       var i, len, ref, results;
       ref = this.anims;
       results = [];
@@ -66726,10 +67748,10 @@ Animator = (function() {
         }
       }
       return results;
-    }).call(this);
+    }.call(this);
   };
 
-  Animator.prototype.lerp = function(type, from, to, f, value) {
+  Animator.prototype.lerp = function (type, from, to, f, value) {
     var emitter, fromE, lerp, toE;
     if (value == null) {
       value = type.make();
@@ -66739,7 +67761,7 @@ Animator = (function() {
     } else if (type.emitter) {
       fromE = from.emitterFrom;
       toE = to.emitterTo;
-      if ((fromE != null) && (toE != null) && fromE === toE) {
+      if (fromE != null && toE != null && fromE === toE) {
         fromE.lerp(f);
         return fromE;
       } else {
@@ -66748,7 +67770,7 @@ Animator = (function() {
         to.emitterTo = emitter;
       }
     } else if (type.op) {
-      lerp = function(a, b) {
+      lerp = function lerp(a, b) {
         if (a === +a && b === +b) {
           return a + (b - a) * f;
         } else {
@@ -66767,10 +67789,9 @@ Animator = (function() {
   };
 
   return Animator;
+}();
 
-})();
-
-Animation = (function() {
+Animation = function () {
   function Animation(animator, time1, type1, options1) {
     this.animator = animator;
     this.time = time1;
@@ -66781,16 +67802,16 @@ Animation = (function() {
     this.queue = [];
   }
 
-  Animation.prototype.dispose = function() {
+  Animation.prototype.dispose = function () {
     return this.animator.unmake(this);
   };
 
-  Animation.prototype.set = function() {
+  Animation.prototype.set = function () {
     var invalid, target, value;
     target = this.target;
     value = arguments.length > 1 ? [].slice.call(arguments) : arguments[0];
     invalid = false;
-    value = this.type.validate(value, target, function() {
+    value = this.type.validate(value, target, function () {
       return invalid = true;
     });
     if (!invalid) {
@@ -66802,7 +67823,7 @@ Animation = (function() {
     return this.notify();
   };
 
-  Animation.prototype.getTime = function() {
+  Animation.prototype.getTime = function () {
     var clock, time;
     clock = this.options.clock;
     time = clock ? clock.getTime() : this.time;
@@ -66813,13 +67834,13 @@ Animation = (function() {
     }
   };
 
-  Animation.prototype.cancel = function(from) {
+  Animation.prototype.cancel = function (from) {
     var base, cancelled, i, len, queue, stage;
     if (from == null) {
       from = this.getTime();
     }
     queue = this.queue;
-    cancelled = (function() {
+    cancelled = function () {
       var i, len, results;
       results = [];
       for (i = 0, len = queue.length; i < len; i++) {
@@ -66829,8 +67850,8 @@ Animation = (function() {
         }
       }
       return results;
-    })();
-    this.queue = (function() {
+    }();
+    this.queue = function () {
       var i, len, results;
       results = [];
       for (i = 0, len = queue.length; i < len; i++) {
@@ -66840,7 +67861,7 @@ Animation = (function() {
         }
       }
       return results;
-    })();
+    }();
     for (i = 0, len = cancelled.length; i < len; i++) {
       stage = cancelled[i];
       if (typeof stage.complete === "function") {
@@ -66852,12 +67873,12 @@ Animation = (function() {
     }
   };
 
-  Animation.prototype.notify = function() {
+  Animation.prototype.notify = function () {
     var base;
     return typeof (base = this.options).step === "function" ? base.step(this.value) : void 0;
   };
 
-  Animation.prototype.immediate = function(value, options) {
+  Animation.prototype.immediate = function (value, options) {
     var complete, delay, duration, ease, end, invalid, start, step, target, time;
     duration = options.duration, delay = options.delay, ease = options.ease, step = options.step, complete = options.complete;
     time = this.getTime();
@@ -66865,7 +67886,7 @@ Animation = (function() {
     end = start + duration;
     invalid = false;
     target = this.type.make();
-    value = this.type.validate(value, target, function() {
+    value = this.type.validate(value, target, function () {
       invalid = true;
       return null;
     });
@@ -66884,7 +67905,7 @@ Animation = (function() {
     });
   };
 
-  Animation.prototype.update = function(time1) {
+  Animation.prototype.update = function (time1) {
     var active, base, clock, complete, ease, end, f, from, method, queue, ref, stage, start, step, to, value;
     this.time = time1;
     if (this.queue.length === 0) {
@@ -66898,11 +67919,11 @@ Animation = (function() {
       if (from == null) {
         from = stage.from = this.type.clone(this.value);
       }
-      f = Ease.clamp(((clock - start) / Math.max(0.00001, end - start)) || 0, 0, 1);
+      f = Ease.clamp((clock - start) / Math.max(0.00001, end - start) || 0, 0, 1);
       if (f === 0) {
         return;
       }
-      method = (function() {
+      method = function () {
         switch (ease) {
           case 'linear':
           case 0:
@@ -66919,7 +67940,7 @@ Animation = (function() {
           default:
             return Ease.cosine;
         }
-      })();
+      }();
       if (method != null) {
         f = method(f);
       }
@@ -66946,18 +67967,19 @@ Animation = (function() {
   };
 
   return Animation;
-
-})();
+}();
 
 module.exports = Animator;
 
 },{"../util":158}],150:[function(require,module,exports){
+'use strict';
+
 var API, Util;
 
 Util = require('../util');
 
-API = (function() {
-  API.prototype.v2 = function() {
+API = function () {
+  API.prototype.v2 = function () {
     return this;
   };
 
@@ -66971,7 +67993,7 @@ API = (function() {
       this._targets = [root];
     }
     this.isRoot = this._targets.length === 1 && this._targets[0] === root;
-    this.isLeaf = this._targets.length === 1 && (this._targets[0].children == null);
+    this.isLeaf = this._targets.length === 1 && this._targets[0].children == null;
     ref = this._targets;
     for (i = j = 0, len = ref.length; j < len; i = ++j) {
       t = ref[i];
@@ -66982,42 +68004,42 @@ API = (function() {
     for (l = 0, len1 = ref1.length; l < len1; l++) {
       type = ref1[l];
       if (type !== 'root') {
-        (function(_this) {
-          return (function(type) {
-            return _this[type] = function(options, binds) {
+        (function (_this) {
+          return function (type) {
+            return _this[type] = function (options, binds) {
               return _this.add(type, options, binds);
             };
-          });
+          };
         })(this)(type);
       }
     }
   }
 
-  API.prototype.select = function(selector) {
+  API.prototype.select = function (selector) {
     var targets;
     targets = this._context.model.select(selector, !this.isRoot ? this._targets : null);
     return this._push(targets);
   };
 
-  API.prototype.eq = function(index) {
+  API.prototype.eq = function (index) {
     if (this._targets.length > index) {
       return this._push([this._targets[index]]);
     }
     return this._push([]);
   };
 
-  API.prototype.filter = function(callback) {
+  API.prototype.filter = function (callback) {
     var matcher;
     if (typeof callback === 'string') {
       matcher = this._context.model._matcher(callback);
-      callback = function(x) {
+      callback = function callback(x) {
         return matcher(x);
       };
     }
     return this._push(this._targets.filter(callback));
   };
 
-  API.prototype.map = function(callback) {
+  API.prototype.map = function (callback) {
     var i, j, ref, results;
     results = [];
     for (i = j = 0, ref = this.length; 0 <= ref ? j < ref : j > ref; i = 0 <= ref ? ++j : --j) {
@@ -67026,7 +68048,7 @@ API = (function() {
     return results;
   };
 
-  API.prototype.each = function(callback) {
+  API.prototype.each = function (callback) {
     var i, j, ref;
     for (i = j = 0, ref = this.length; 0 <= ref ? j < ref : j > ref; i = 0 <= ref ? ++j : --j) {
       callback(this[i], i, this);
@@ -67034,7 +68056,7 @@ API = (function() {
     return this;
   };
 
-  API.prototype.add = function(type, options, binds) {
+  API.prototype.add = function (type, options, binds) {
     var controller, j, len, node, nodes, ref, target;
     controller = this._context.controller;
     if (this.isLeaf) {
@@ -67051,7 +68073,7 @@ API = (function() {
     return this._push(nodes);
   };
 
-  API.prototype.remove = function(selector) {
+  API.prototype.remove = function (selector) {
     var j, len, ref, target;
     if (selector) {
       return this.select(selector).remove();
@@ -67064,7 +68086,7 @@ API = (function() {
     return this._pop();
   };
 
-  API.prototype.set = function(key, value) {
+  API.prototype.set = function (key, value) {
     var j, len, ref, target;
     ref = this._targets;
     for (j = 0, len = ref.length; j < len; j++) {
@@ -67074,7 +68096,7 @@ API = (function() {
     return this;
   };
 
-  API.prototype.getAll = function(key) {
+  API.prototype.getAll = function (key) {
     var j, len, ref, results, target;
     ref = this._targets;
     results = [];
@@ -67085,17 +68107,17 @@ API = (function() {
     return results;
   };
 
-  API.prototype.get = function(key) {
+  API.prototype.get = function (key) {
     var ref;
     return (ref = this._targets[0]) != null ? ref.get(key) : void 0;
   };
 
-  API.prototype.evaluate = function(key, time) {
+  API.prototype.evaluate = function (key, time) {
     var ref;
     return (ref = this._targets[0]) != null ? ref.evaluate(key, time) : void 0;
   };
 
-  API.prototype.bind = function(key, value) {
+  API.prototype.bind = function (key, value) {
     var j, len, ref, target;
     ref = this._targets;
     for (j = 0, len = ref.length; j < len; j++) {
@@ -67105,7 +68127,7 @@ API = (function() {
     return this;
   };
 
-  API.prototype.unbind = function(key) {
+  API.prototype.unbind = function (key) {
     var j, len, ref, target;
     ref = this._targets;
     for (j = 0, len = ref.length; j < len; j++) {
@@ -67115,80 +68137,80 @@ API = (function() {
     return this;
   };
 
-  API.prototype.end = function() {
+  API.prototype.end = function () {
     return (this.isLeaf ? this._pop() : this)._pop();
   };
 
-  API.prototype._push = function(targets) {
+  API.prototype._push = function (targets) {
     return new API(this._context, this, targets);
   };
 
-  API.prototype._pop = function() {
+  API.prototype._pop = function () {
     var ref;
     return (ref = this._up) != null ? ref : this;
   };
 
-  API.prototype._reset = function() {
+  API.prototype._reset = function () {
     var ref, ref1;
     return (ref = (ref1 = this._up) != null ? ref1.reset() : void 0) != null ? ref : this;
   };
 
-  API.prototype.map = function(callback) {
+  API.prototype.map = function (callback) {
     return this._targets.map(callback);
   };
 
-  API.prototype["on"] = function() {
+  API.prototype["on"] = function () {
     var args;
     args = arguments;
-    this._targets.map(function(x) {
+    this._targets.map(function (x) {
       return x.on.apply(x, args);
     });
     return this;
   };
 
-  API.prototype["off"] = function() {
+  API.prototype["off"] = function () {
     var args;
     args = arguments;
-    this._targets.map(function(x) {
+    this._targets.map(function (x) {
       return x.on.apply(x, args);
     });
     return this;
   };
 
-  API.prototype.toString = function() {
+  API.prototype.toString = function () {
     var tags;
-    tags = this._targets.map(function(x) {
+    tags = this._targets.map(function (x) {
       return x.toString();
     });
     if (this._targets.length > 1) {
-      return "[" + (tags.join(", ")) + "]";
+      return "[" + tags.join(", ") + "]";
     } else {
       return tags[0];
     }
   };
 
-  API.prototype.toMarkup = function() {
+  API.prototype.toMarkup = function () {
     var tags;
-    tags = this._targets.map(function(x) {
+    tags = this._targets.map(function (x) {
       return x.toMarkup();
     });
     return tags.join("\n\n");
   };
 
-  API.prototype.print = function() {
-    Util.Pretty.print(this._targets.map(function(x) {
+  API.prototype.print = function () {
+    Util.Pretty.print(this._targets.map(function (x) {
       return x.toMarkup();
     }).join("\n\n"));
     return this;
   };
 
-  API.prototype.debug = function() {
+  API.prototype.debug = function () {
     var getName, info, j, len, name, ref, shader, shaders;
     info = this.inspect();
     console.log('Renderables: ', info.renderables);
     console.log('Renders: ', info.renders);
     console.log('Shaders: ', info.shaders);
-    getName = function(owner) {
+    getName = function getName(owner) {
       return owner.constructor.toString().match('function +([^(]*)')[1];
     };
     shaders = [];
@@ -67204,8 +68226,8 @@ API = (function() {
     return ShaderGraph.inspect(shaders);
   };
 
-  API.prototype.inspect = function(selector, trait, print) {
-    var _info, flatten, info, j, k, len, make, map, recurse, ref, renderables, self, target;
+  API.prototype.inspect = function (selector, trait, print) {
+    var _info, flatten, info, j, k, len, make, map, recurse, ref, renderables, _self, target;
     if (typeof trait === 'boolean') {
       print = trait;
       trait = null;
@@ -67213,11 +68235,11 @@ API = (function() {
     if (print == null) {
       print = true;
     }
-    map = function(node) {
+    map = function map(node) {
       var ref, ref1;
       return (ref = (ref1 = node.controller) != null ? ref1.objects : void 0) != null ? ref : [];
     };
-    recurse = self = function(node, list) {
+    recurse = _self = function self(node, list) {
       var child, j, len, ref;
       if (list == null) {
         list = [];
@@ -67229,20 +68251,20 @@ API = (function() {
         ref = node.children;
         for (j = 0, len = ref.length; j < len; j++) {
           child = ref[j];
-          self(child, list);
+          _self(child, list);
         }
       }
       return list;
     };
-    flatten = function(list) {
-      list = list.reduce((function(a, b) {
+    flatten = function flatten(list) {
+      list = list.reduce(function (a, b) {
         return a.concat(b);
-      }), []);
-      return list = list.filter(function(x, i) {
-        return (x != null) && list.indexOf(x) === i;
+      }, []);
+      return list = list.filter(function (x, i) {
+        return x != null && list.indexOf(x) === i;
       });
     };
-    make = function(renderable, render) {
+    make = function make(renderable, render) {
       var d;
       d = {};
       d.owner = renderable;
@@ -67266,12 +68288,12 @@ API = (function() {
       }
       _info = {
         renderables: renderables = flatten(recurse(target)),
-        renders: flatten(renderables.map(function(x) {
+        renders: flatten(renderables.map(function (x) {
           return x.renders;
         })),
-        shaders: flatten(renderables.map(function(x) {
+        shaders: flatten(renderables.map(function (x) {
           var ref1;
-          return (ref1 = x.renders) != null ? ref1.map(function(r) {
+          return (ref1 = x.renders) != null ? ref1.map(function (r) {
             return make(x, r);
           }) : void 0;
         }))
@@ -67284,39 +68306,40 @@ API = (function() {
   };
 
   return API;
-
-})();
+}();
 
 module.exports = API;
 
 },{"../util":158}],151:[function(require,module,exports){
+'use strict';
+
 var Controller, Util;
 
 Util = require('../util');
 
-Controller = (function() {
+Controller = function () {
   function Controller(model, primitives) {
     this.model = model;
     this.primitives = primitives;
   }
 
-  Controller.prototype.getRoot = function() {
+  Controller.prototype.getRoot = function () {
     return this.model.getRoot();
   };
 
-  Controller.prototype.getTypes = function() {
+  Controller.prototype.getTypes = function () {
     return this.primitives.getTypes();
   };
 
-  Controller.prototype.make = function(type, options, binds) {
+  Controller.prototype.make = function (type, options, binds) {
     return this.primitives.make(type, options, binds);
   };
 
-  Controller.prototype.get = function(node, key) {
+  Controller.prototype.get = function (node, key) {
     return node.get(key);
   };
 
-  Controller.prototype.set = function(node, key, value) {
+  Controller.prototype.set = function (node, key, value) {
     var e;
     try {
       return node.set(key, value);
@@ -67327,7 +68350,7 @@ Controller = (function() {
     }
   };
 
-  Controller.prototype.bind = function(node, key, expr) {
+  Controller.prototype.bind = function (node, key, expr) {
     var e;
     try {
       return node.bind(key, expr);
@@ -67338,7 +68361,7 @@ Controller = (function() {
     }
   };
 
-  Controller.prototype.unbind = function(node, key) {
+  Controller.prototype.unbind = function (node, key) {
     var e;
     try {
       return node.unbind(key);
@@ -67349,14 +68372,14 @@ Controller = (function() {
     }
   };
 
-  Controller.prototype.add = function(node, target) {
+  Controller.prototype.add = function (node, target) {
     if (target == null) {
       target = this.model.getRoot();
     }
     return target.add(node);
   };
 
-  Controller.prototype.remove = function(node) {
+  Controller.prototype.remove = function (node) {
     var target;
     target = node.parent;
     if (target) {
@@ -67365,12 +68388,13 @@ Controller = (function() {
   };
 
   return Controller;
-
-})();
+}();
 
 module.exports = Controller;
 
 },{"../util":158}],152:[function(require,module,exports){
+'use strict';
+
 exports.Animator = require('./animator');
 exports.API = require('./api');
 exports.Controller = require('./controller');
@@ -67378,10 +68402,12 @@ exports.Controller = require('./controller');
 },{"./animator":149,"./api":150,"./controller":151}],153:[function(require,module,exports){
 module.exports=require(2)
 },{}],154:[function(require,module,exports){
+'use strict';
+
 // Recycled from threestrap
 
 module.exports = self = {
-  bind: function (context, globals) {
+  bind: function bind(context, globals) {
     return function (key, object) {
 
       // Prepare object
@@ -67406,20 +68432,22 @@ module.exports = self = {
       // Whitelisted objects
       var selector = path.shift();
       var target = {
-        'this': object,
+        'this': object
       }[selector] || globals[selector] || context[selector] || fallback;
 
       // Look up keys
-      while (target && (key = path.shift())) { target = target[key] };
+      while (target && (key = path.shift())) {
+        target = target[key];
+      };
 
       // Attach event handler at last level
       if (target && (target.on || target.addEventListener)) {
-        var callback = function (event) {
+        var callback = function callback(event) {
           object[dest] && object[dest](event, context);
         };
 
         // Polyfill for both styles of event listener adders
-        self._polyfill(target, [ 'addEventListener', 'on' ], function (method) {
+        self._polyfill(target, ['addEventListener', 'on'], function (method) {
           target[method](name, callback);
         });
 
@@ -67429,14 +68457,13 @@ module.exports = self = {
 
         // Return callback
         return callback;
-      }
-      else {
+      } else {
         throw "Cannot bind '" + key + "' in " + this.__name;
       }
     };
   },
 
-  unbind: function () {
+  unbind: function unbind() {
     return function (object) {
       // Remove all binds belonging to object
       if (object.__binds) {
@@ -67444,39 +68471,38 @@ module.exports = self = {
         object.__binds.forEach(function (bind) {
 
           // Polyfill for both styles of event listener removers
-          self._polyfill(bind.target, [ 'removeEventListener', 'off' ], function (method) {
+          self._polyfill(bind.target, ['removeEventListener', 'off'], function (method) {
             bind.target[method](bind.name, bind.callback);
           });
         }.bind(this));
 
         object.__binds = [];
       }
-    }
+    };
   },
 
-  apply: function ( object ) {
+  apply: function apply(object) {
 
     THREE.EventDispatcher.prototype.apply(object);
 
-    object.trigger     = self._trigger;
+    object.trigger = self._trigger;
     object.triggerOnce = self._triggerOnce;
 
     object.on = object.addEventListener;
     object.off = object.removeEventListener;
     object.dispatchEvent = object.trigger;
-
   },
 
   ////
 
-  _triggerOnce: function (event) {
+  _triggerOnce: function _triggerOnce(event) {
     this.trigger(event);
     if (this._listeners) {
-      delete this._listeners[event.type]
+      delete this._listeners[event.type];
     }
   },
 
-  _trigger: function (event) {
+  _trigger: function _trigger(event) {
 
     if (this._listeners === undefined) return;
 
@@ -67484,7 +68510,7 @@ module.exports = self = {
     var listeners = this._listeners[type];
     if (listeners !== undefined) {
 
-      listeners = listeners.slice()
+      listeners = listeners.slice();
       var length = listeners.length;
 
       event.target = this;
@@ -67495,10 +68521,12 @@ module.exports = self = {
     }
   },
 
-  _polyfill: function (object, methods, callback) {
-    methods.map(function (method) { return object.method });
+  _polyfill: function _polyfill(object, methods, callback) {
+    methods.map(function (method) {
+      return object.method;
+    });
     if (methods.length) callback(methods[0]);
-  },
+  }
 
 };
 
@@ -75420,6 +76448,8 @@ module.exports = Outlet;
 
 
 },{"./graph":204}],208:[function(require,module,exports){
+'use strict';
+
 var Block, Factory, GLSL, Graph, Linker, ShaderGraph, Snippet, Visualize, cache, inspect, library, merge, visualize;
 
 Block = require('./block');
@@ -75444,7 +76474,7 @@ inspect = Visualize.inspect;
 
 Snippet = Linker.Snippet;
 
-merge = function(a, b) {
+merge = function merge(a, b) {
   var key, out, ref, value;
   if (b == null) {
     b = {};
@@ -75457,7 +76487,7 @@ merge = function(a, b) {
   return out;
 };
 
-ShaderGraph = (function() {
+ShaderGraph = function () {
   function ShaderGraph(snippets, config) {
     var defaults;
     if (!(this instanceof ShaderGraph)) {
@@ -75474,7 +76504,7 @@ ShaderGraph = (function() {
     this.fetch = cache(library(GLSL, snippets, Snippet.load));
   }
 
-  ShaderGraph.prototype.shader = function(config) {
+  ShaderGraph.prototype.shader = function (config) {
     var _config;
     if (config == null) {
       config = {};
@@ -75483,15 +76513,15 @@ ShaderGraph = (function() {
     return new Factory.Factory(GLSL, this.fetch, _config);
   };
 
-  ShaderGraph.prototype.material = function(config) {
+  ShaderGraph.prototype.material = function (config) {
     return new Factory.Material(this.shader(config), this.shader(config));
   };
 
-  ShaderGraph.prototype.inspect = function(shader) {
+  ShaderGraph.prototype.inspect = function (shader) {
     return ShaderGraph.inspect(shader);
   };
 
-  ShaderGraph.prototype.visualize = function(shader) {
+  ShaderGraph.prototype.visualize = function (shader) {
     return ShaderGraph.visualize(shader);
   };
 
@@ -75507,17 +76537,16 @@ ShaderGraph = (function() {
 
   ShaderGraph.Visualize = Visualize;
 
-  ShaderGraph.inspect = function(shader) {
+  ShaderGraph.inspect = function (shader) {
     return inspect(shader);
   };
 
-  ShaderGraph.visualize = function(shader) {
+  ShaderGraph.visualize = function (shader) {
     return visualize(shader);
   };
 
   return ShaderGraph;
-
-})();
+}();
 
 module.exports = ShaderGraph;
 
@@ -76773,548 +77802,543 @@ module.exports = serialize;
 
 
 },{"../block":188}],219:[function(require,module,exports){
-module.exports = require('./lib/index')
+'use strict';
+
+module.exports = require('./lib/index');
 
 },{"./lib/index":221}],220:[function(require,module,exports){
-var state
-  , token
-  , tokens
-  , idx
+'use strict';
+
+var state, token, tokens, idx;
 
 var original_symbol = {
-    nud: function() { return this.children && this.children.length ? this : fail('unexpected')() }
-  , led: fail('missing operator')
-}
+  nud: function nud() {
+    return this.children && this.children.length ? this : fail('unexpected')();
+  },
+  led: fail('missing operator')
+};
 
-var symbol_table = {}
+var symbol_table = {};
 
 function itself() {
-  return this
+  return this;
 }
 
-symbol('(ident)').nud = itself
-symbol('(keyword)').nud = itself
-symbol('(builtin)').nud = itself
-symbol('(literal)').nud = itself
-symbol('(end)')
+symbol('(ident)').nud = itself;
+symbol('(keyword)').nud = itself;
+symbol('(builtin)').nud = itself;
+symbol('(literal)').nud = itself;
+symbol('(end)');
 
-symbol(':')
-symbol(';')
-symbol(',')
-symbol(')')
-symbol(']')
-symbol('}')
+symbol(':');
+symbol(';');
+symbol(',');
+symbol(')');
+symbol(']');
+symbol('}');
 
-infixr('&&', 30)
-infixr('||', 30)
-infix('|', 43)
-infix('^', 44)
-infix('&', 45)
-infix('==', 46)
-infix('!=', 46)
-infix('<', 47)
-infix('<=', 47)
-infix('>', 47)
-infix('>=', 47)
-infix('>>', 48)
-infix('<<', 48)
-infix('+', 50)
-infix('-', 50)
-infix('*', 60)
-infix('/', 60)
-infix('%', 60)
-infix('?', 20, function(left) {
-  this.children = [left, expression(0), (advance(':'), expression(0))]
-  this.type = 'ternary'
-  return this
-})
-infix('.', 80, function(left) {
-  token.type = 'literal'
-  state.fake(token)
-  this.children = [left, token]
-  advance()
-  return this
-})
-infix('[', 80, function(left) {
-  this.children = [left, expression(0)]
-  this.type = 'binary'
-  advance(']')
-  return this
-})
-infix('(', 80, function(left) {
-  this.children = [left]
-  this.type = 'call'
+infixr('&&', 30);
+infixr('||', 30);
+infix('|', 43);
+infix('^', 44);
+infix('&', 45);
+infix('==', 46);
+infix('!=', 46);
+infix('<', 47);
+infix('<=', 47);
+infix('>', 47);
+infix('>=', 47);
+infix('>>', 48);
+infix('<<', 48);
+infix('+', 50);
+infix('-', 50);
+infix('*', 60);
+infix('/', 60);
+infix('%', 60);
+infix('?', 20, function (left) {
+  this.children = [left, expression(0), (advance(':'), expression(0))];
+  this.type = 'ternary';
+  return this;
+});
+infix('.', 80, function (left) {
+  token.type = 'literal';
+  state.fake(token);
+  this.children = [left, token];
+  advance();
+  return this;
+});
+infix('[', 80, function (left) {
+  this.children = [left, expression(0)];
+  this.type = 'binary';
+  advance(']');
+  return this;
+});
+infix('(', 80, function (left) {
+  this.children = [left];
+  this.type = 'call';
 
-  if(token.data !== ')') while(1) {
-    this.children.push(expression(0))
-    if(token.data !== ',') break
-    advance(',')
+  if (token.data !== ')') while (1) {
+    this.children.push(expression(0));
+    if (token.data !== ',') break;
+    advance(',');
   }
-  advance(')')
-  return this
-})
+  advance(')');
+  return this;
+});
 
-prefix('-')
-prefix('+')
-prefix('!')
-prefix('~')
-prefix('defined')
-prefix('(', function() {
-  this.type = 'group'
-  this.children = [expression(0)]
-  advance(')')
-  return this 
-})
-prefix('++')
-prefix('--')
-suffix('++')
-suffix('--')
+prefix('-');
+prefix('+');
+prefix('!');
+prefix('~');
+prefix('defined');
+prefix('(', function () {
+  this.type = 'group';
+  this.children = [expression(0)];
+  advance(')');
+  return this;
+});
+prefix('++');
+prefix('--');
+suffix('++');
+suffix('--');
 
-assignment('=')
-assignment('+=')
-assignment('-=')
-assignment('*=')
-assignment('/=')
-assignment('%=')
-assignment('&=')
-assignment('|=')
-assignment('^=')
-assignment('>>=')
-assignment('<<=')
+assignment('=');
+assignment('+=');
+assignment('-=');
+assignment('*=');
+assignment('/=');
+assignment('%=');
+assignment('&=');
+assignment('|=');
+assignment('^=');
+assignment('>>=');
+assignment('<<=');
 
-module.exports = function(incoming_state, incoming_tokens) {
-  state = incoming_state
-  tokens = incoming_tokens
-  idx = 0
-  var result
+module.exports = function (incoming_state, incoming_tokens) {
+  state = incoming_state;
+  tokens = incoming_tokens;
+  idx = 0;
+  var result;
 
-  if(!tokens.length) return
+  if (!tokens.length) return;
 
-  advance()
-  result = expression(0)
-  result.parent = state[0]
-  emit(result)
+  advance();
+  result = expression(0);
+  result.parent = state[0];
+  emit(result);
 
-  if(idx < tokens.length) {
-    throw new Error('did not use all tokens')
+  if (idx < tokens.length) {
+    throw new Error('did not use all tokens');
   }
 
-  result.parent.children = [result]
+  result.parent.children = [result];
 
   function emit(node) {
-    state.unshift(node, false)
-    for(var i = 0, len = node.children.length; i < len; ++i) {
-      emit(node.children[i])
+    state.unshift(node, false);
+    for (var i = 0, len = node.children.length; i < len; ++i) {
+      emit(node.children[i]);
     }
-    state.shift()
+    state.shift();
   }
-
-}
+};
 
 function symbol(id, binding_power) {
-  var sym = symbol_table[id]
-  binding_power = binding_power || 0
-  if(sym) {
-    if(binding_power > sym.lbp) {
-      sym.lbp = binding_power
+  var sym = symbol_table[id];
+  binding_power = binding_power || 0;
+  if (sym) {
+    if (binding_power > sym.lbp) {
+      sym.lbp = binding_power;
     }
   } else {
-    sym = Object.create(original_symbol)
-    sym.id = id 
-    sym.lbp = binding_power
-    symbol_table[id] = sym
+    sym = Object.create(original_symbol);
+    sym.id = id;
+    sym.lbp = binding_power;
+    symbol_table[id] = sym;
   }
-  return sym
+  return sym;
 }
 
 function expression(rbp) {
-  var left, t = token
-  advance()
+  var left,
+      t = token;
+  advance();
 
-  left = t.nud()
-  while(rbp < token.lbp) {
-    t = token
-    advance()
-    left = t.led(left)
+  left = t.nud();
+  while (rbp < token.lbp) {
+    t = token;
+    advance();
+    left = t.led(left);
   }
-  return left
+  return left;
 }
 
 function infix(id, bp, led) {
-  var sym = symbol(id, bp)
-  sym.led = led || function(left) {
-    this.children = [left, expression(bp)]
-    this.type = 'binary'
-    return this
-  }
+  var sym = symbol(id, bp);
+  sym.led = led || function (left) {
+    this.children = [left, expression(bp)];
+    this.type = 'binary';
+    return this;
+  };
 }
 
 function infixr(id, bp, led) {
-  var sym = symbol(id, bp)
-  sym.led = led || function(left) {
-    this.children = [left, expression(bp - 1)]
-    this.type = 'binary'
-    return this
-  }
-  return sym
+  var sym = symbol(id, bp);
+  sym.led = led || function (left) {
+    this.children = [left, expression(bp - 1)];
+    this.type = 'binary';
+    return this;
+  };
+  return sym;
 }
 
 function prefix(id, nud) {
-  var sym = symbol(id)
-  sym.nud = nud || function() {
-    this.children = [expression(70)]
-    this.type = 'unary'
-    return this
-  }
-  return sym
+  var sym = symbol(id);
+  sym.nud = nud || function () {
+    this.children = [expression(70)];
+    this.type = 'unary';
+    return this;
+  };
+  return sym;
 }
 
 function suffix(id) {
-  var sym = symbol(id, 150)
-  sym.led = function(left) {
-    this.children = [left]
-    this.type = 'suffix'
-    return this
-  }
+  var sym = symbol(id, 150);
+  sym.led = function (left) {
+    this.children = [left];
+    this.type = 'suffix';
+    return this;
+  };
 }
 
 function assignment(id) {
-  return infixr(id, 10, function(left) {
-    this.children = [left, expression(9)]
-    this.assignment = true
-    this.type = 'assign'
-    return this
-  })
+  return infixr(id, 10, function (left) {
+    this.children = [left, expression(9)];
+    this.assignment = true;
+    this.type = 'assign';
+    return this;
+  });
 }
 
 function advance(id) {
-  var next
-    , value
-    , type
-    , output
+  var next, value, type, output;
 
-  if(id && token.data !== id) {
-    return state.unexpected('expected `'+ id + '`, got `'+token.data+'`')
+  if (id && token.data !== id) {
+    return state.unexpected('expected `' + id + '`, got `' + token.data + '`');
   }
 
-  if(idx >= tokens.length) {
-    token = symbol_table['(end)']
-    return
+  if (idx >= tokens.length) {
+    token = symbol_table['(end)'];
+    return;
   }
 
-  next = tokens[idx++]
-  value = next.data
-  type = next.type
+  next = tokens[idx++];
+  value = next.data;
+  type = next.type;
 
-  if(type === 'ident') {
-    output = state.scope.find(value) || state.create_node()
-    type = output.type
-  } else if(type === 'builtin') {
-    output = symbol_table['(builtin)']
-  } else if(type === 'keyword') {
-    output = symbol_table['(keyword)']
-  } else if(type === 'operator') {
-    output = symbol_table[value]
-    if(!output) {
-      return state.unexpected('unknown operator `'+value+'`')
+  if (type === 'ident') {
+    output = state.scope.find(value) || state.create_node();
+    type = output.type;
+  } else if (type === 'builtin') {
+    output = symbol_table['(builtin)'];
+  } else if (type === 'keyword') {
+    output = symbol_table['(keyword)'];
+  } else if (type === 'operator') {
+    output = symbol_table[value];
+    if (!output) {
+      return state.unexpected('unknown operator `' + value + '`');
     }
-  } else if(type === 'float' || type === 'integer') {
-    type = 'literal'
-    output = symbol_table['(literal)']
+  } else if (type === 'float' || type === 'integer') {
+    type = 'literal';
+    output = symbol_table['(literal)'];
   } else {
-    return state.unexpected('unexpected token.')
+    return state.unexpected('unexpected token.');
   }
 
-  if(output) {
-    if(!output.nud) { output.nud = itself }
-    if(!output.children) { output.children = [] }
+  if (output) {
+    if (!output.nud) {
+      output.nud = itself;
+    }
+    if (!output.children) {
+      output.children = [];
+    }
   }
 
-  output = Object.create(output)
-  output.token = next
-  output.type = type
-  if(!output.data) output.data = value
+  output = Object.create(output);
+  output.token = next;
+  output.type = type;
+  if (!output.data) output.data = value;
 
-  return token = output
+  return token = output;
 }
 
 function fail(message) {
-  return function() { return state.unexpected(message) }
+  return function () {
+    return state.unexpected(message);
+  };
 }
 
 },{}],221:[function(require,module,exports){
-module.exports = parser
+'use strict';
 
-var through = require('../../through')
-  , full_parse_expr = require('./expr')
-  , Scope = require('./scope')
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+module.exports = parser;
+
+var through = require('../../through'),
+    full_parse_expr = require('./expr'),
+    Scope = require('./scope');
 
 // singleton!
-var Advance = new Object
+var Advance = new Object();
 
-var DEBUG = false
+var DEBUG = false;
 
-var _ = 0
-  , IDENT = _++
-  , STMT = _++
-  , STMTLIST = _++
-  , STRUCT = _++
-  , FUNCTION = _++
-  , FUNCTIONARGS = _++
-  , DECL = _++
-  , DECLLIST = _++
-  , FORLOOP = _++
-  , WHILELOOP = _++
-  , IF = _++
-  , EXPR = _++
-  , PRECISION = _++
-  , COMMENT = _++
-  , PREPROCESSOR = _++
-  , KEYWORD = _++
-  , KEYWORD_OR_IDENT = _++
-  , RETURN = _++
-  , BREAK = _++
-  , CONTINUE = _++
-  , DISCARD = _++
-  , DOWHILELOOP = _++
-  , PLACEHOLDER = _++
-  , QUANTIFIER = _++
+var _ = 0,
+    IDENT = _++,
+    STMT = _++,
+    STMTLIST = _++,
+    STRUCT = _++,
+    FUNCTION = _++,
+    FUNCTIONARGS = _++,
+    DECL = _++,
+    DECLLIST = _++,
+    FORLOOP = _++,
+    WHILELOOP = _++,
+    IF = _++,
+    EXPR = _++,
+    PRECISION = _++,
+    COMMENT = _++,
+    PREPROCESSOR = _++,
+    KEYWORD = _++,
+    KEYWORD_OR_IDENT = _++,
+    RETURN = _++,
+    BREAK = _++,
+    CONTINUE = _++,
+    DISCARD = _++,
+    DOWHILELOOP = _++,
+    PLACEHOLDER = _++,
+    QUANTIFIER = _++;
 
-var DECL_ALLOW_ASSIGN = 0x1
-  , DECL_ALLOW_COMMA = 0x2
-  , DECL_REQUIRE_NAME = 0x4
-  , DECL_ALLOW_INVARIANT = 0x8
-  , DECL_ALLOW_STORAGE = 0x10
-  , DECL_NO_INOUT = 0x20
-  , DECL_ALLOW_STRUCT = 0x40
-  , DECL_STATEMENT = 0xFF
-  , DECL_FUNCTION = DECL_STATEMENT & ~(DECL_ALLOW_ASSIGN | DECL_ALLOW_COMMA | DECL_NO_INOUT | DECL_ALLOW_INVARIANT | DECL_REQUIRE_NAME)
-  , DECL_STRUCT = DECL_STATEMENT & ~(DECL_ALLOW_ASSIGN | DECL_ALLOW_INVARIANT | DECL_ALLOW_STORAGE | DECL_ALLOW_STRUCT)
+var DECL_ALLOW_ASSIGN = 0x1,
+    DECL_ALLOW_COMMA = 0x2,
+    DECL_REQUIRE_NAME = 0x4,
+    DECL_ALLOW_INVARIANT = 0x8,
+    DECL_ALLOW_STORAGE = 0x10,
+    DECL_NO_INOUT = 0x20,
+    DECL_ALLOW_STRUCT = 0x40,
+    DECL_STATEMENT = 0xFF,
+    DECL_FUNCTION = DECL_STATEMENT & ~(DECL_ALLOW_ASSIGN | DECL_ALLOW_COMMA | DECL_NO_INOUT | DECL_ALLOW_INVARIANT | DECL_REQUIRE_NAME),
+    DECL_STRUCT = DECL_STATEMENT & ~(DECL_ALLOW_ASSIGN | DECL_ALLOW_INVARIANT | DECL_ALLOW_STORAGE | DECL_ALLOW_STRUCT);
 
-var QUALIFIERS = ['const', 'attribute', 'uniform', 'varying']
+var QUALIFIERS = ['const', 'attribute', 'uniform', 'varying'];
 
-var NO_ASSIGN_ALLOWED = false
-  , NO_COMMA_ALLOWED = false
+var NO_ASSIGN_ALLOWED = false,
+    NO_COMMA_ALLOWED = false;
 
 // map of tokens to stmt types
 var token_map = {
-    'block-comment': COMMENT
-  , 'line-comment': COMMENT
-  , 'preprocessor': PREPROCESSOR
-}
+  'block-comment': COMMENT,
+  'line-comment': COMMENT,
+  'preprocessor': PREPROCESSOR
+};
 
 // map of stmt types to human
-var stmt_type = _ = [ 
-    'ident'
-  , 'stmt'
-  , 'stmtlist'
-  , 'struct'
-  , 'function'
-  , 'functionargs'
-  , 'decl'
-  , 'decllist'
-  , 'forloop'
-  , 'whileloop'
-  , 'i'+'f'
-  , 'expr'
-  , 'precision'
-  , 'comment'
-  , 'preprocessor'
-  , 'keyword'
-  , 'keyword_or_ident'
-  , 'return'
-  , 'break'
-  , 'continue'
-  , 'discard'
-  , 'do-while'
-  , 'placeholder'
-  , 'quantifier'
-]
+var stmt_type = _ = ['ident', 'stmt', 'stmtlist', 'struct', 'function', 'functionargs', 'decl', 'decllist', 'forloop', 'whileloop', 'i' + 'f', 'expr', 'precision', 'comment', 'preprocessor', 'keyword', 'keyword_or_ident', 'return', 'break', 'continue', 'discard', 'do-while', 'placeholder', 'quantifier'];
 
 function parser() {
-  var stmtlist = n(STMTLIST)
-    , stmt = n(STMT)
-    , decllist = n(DECLLIST)
-    , precision = n(PRECISION)
-    , ident = n(IDENT)
-    , keyword_or_ident = n(KEYWORD_OR_IDENT)
-    , fn = n(FUNCTION)
-    , fnargs = n(FUNCTIONARGS)
-    , forstmt = n(FORLOOP)
-    , ifstmt = n(IF)
-    , whilestmt = n(WHILELOOP)
-    , returnstmt = n(RETURN)
-    , dowhilestmt = n(DOWHILELOOP)
-    , quantifier = n(QUANTIFIER)
+  var stmtlist = n(STMTLIST),
+      stmt = n(STMT),
+      decllist = n(DECLLIST),
+      precision = n(PRECISION),
+      ident = n(IDENT),
+      keyword_or_ident = n(KEYWORD_OR_IDENT),
+      fn = n(FUNCTION),
+      fnargs = n(FUNCTIONARGS),
+      forstmt = n(FORLOOP),
+      ifstmt = n(IF),
+      whilestmt = n(WHILELOOP),
+      returnstmt = n(RETURN),
+      dowhilestmt = n(DOWHILELOOP),
+      quantifier = n(QUANTIFIER);
 
-  var parse_struct
-    , parse_precision
-    , parse_quantifier
-    , parse_forloop
-    , parse_if
-    , parse_return
-    , parse_whileloop
-    , parse_dowhileloop
-    , parse_function
-    , parse_function_args
+  var parse_struct, parse_precision, parse_quantifier, parse_forloop, parse_if, parse_return, parse_whileloop, parse_dowhileloop, parse_function, parse_function_args;
 
-  var stream = through(write, end)
-    , check = arguments.length ? [].slice.call(arguments) : []
-    , depth = 0
-    , state = []
-    , tokens = []
-    , whitespace = []
-    , errored = false
-    , program
-    , token
-    , node
+  var stream = through(write, end),
+      check = arguments.length ? [].slice.call(arguments) : [],
+      depth = 0,
+      state = [],
+      tokens = [],
+      whitespace = [],
+      errored = false,
+      program,
+      token,
+      node;
 
   // setup state
-  state.shift = special_shift
-  state.unshift = special_unshift
-  state.fake = special_fake
-  state.unexpected = unexpected
-  state.scope = new Scope(state)
-  state.create_node = function() {
-    var n = mknode(IDENT, token)
-    n.parent = stream.program
-    return n
-  }
+  state.shift = special_shift;
+  state.unshift = special_unshift;
+  state.fake = special_fake;
+  state.unexpected = unexpected;
+  state.scope = new Scope(state);
+  state.create_node = function () {
+    var n = mknode(IDENT, token);
+    n.parent = stream.program;
+    return n;
+  };
 
-  setup_stative_parsers()
+  setup_stative_parsers();
 
   // setup root node
-  node = stmtlist()
-  node.expecting = '(eof)'
-  node.mode = STMTLIST
-  node.token = {type: '(program)', data: '(program)'}
-  program = node
+  node = stmtlist();
+  node.expecting = '(eof)';
+  node.mode = STMTLIST;
+  node.token = { type: '(program)', data: '(program)' };
+  program = node;
 
-  stream.program = program
-  stream.scope = function(scope) {
-    if(arguments.length === 1) {
-      state.scope = scope
+  stream.program = program;
+  stream.scope = function (scope) {
+    if (arguments.length === 1) {
+      state.scope = scope;
     }
-    return state.scope
-  }
+    return state.scope;
+  };
 
-  state.unshift(node)
-  return stream
+  state.unshift(node);
+  return stream;
 
   // stream functions ---------------------------------------------
 
   function write(input) {
-    if(input.type === 'whitespace' || input.type === 'line-comment' || input.type === 'block-comment') {
+    if (input.type === 'whitespace' || input.type === 'line-comment' || input.type === 'block-comment') {
 
-      whitespace.push(input)
-      return
+      whitespace.push(input);
+      return;
     }
-    tokens.push(input)
-    token = token || tokens[0]
+    tokens.push(input);
+    token = token || tokens[0];
 
-    if(token && whitespace.length) {
-      token.preceding = token.preceding || []
-      token.preceding = token.preceding.concat(whitespace)
-      whitespace = []
+    if (token && whitespace.length) {
+      token.preceding = token.preceding || [];
+      token.preceding = token.preceding.concat(whitespace);
+      whitespace = [];
     }
 
-    while(take()) switch(state[0].mode) {
-      case STMT: parse_stmt(); break
-      case STMTLIST: parse_stmtlist(); break
-      case DECL: parse_decl(); break
-      case DECLLIST: parse_decllist(); break
-      case EXPR: parse_expr(); break
-      case STRUCT: parse_struct(true, true); break
-      case PRECISION: parse_precision(); break
-      case IDENT: parse_ident(); break
-      case KEYWORD: parse_keyword(); break
-      case KEYWORD_OR_IDENT: parse_keyword_or_ident(); break
-      case FUNCTION: parse_function(); break
-      case FUNCTIONARGS: parse_function_args(); break
-      case FORLOOP: parse_forloop(); break
-      case WHILELOOP: parse_whileloop(); break
-      case DOWHILELOOP: parse_dowhileloop(); break
-      case RETURN: parse_return(); break
-      case IF: parse_if(); break
-      case QUANTIFIER: parse_quantifier(); break
+    while (take()) {
+      switch (state[0].mode) {
+        case STMT:
+          parse_stmt();break;
+        case STMTLIST:
+          parse_stmtlist();break;
+        case DECL:
+          parse_decl();break;
+        case DECLLIST:
+          parse_decllist();break;
+        case EXPR:
+          parse_expr();break;
+        case STRUCT:
+          parse_struct(true, true);break;
+        case PRECISION:
+          parse_precision();break;
+        case IDENT:
+          parse_ident();break;
+        case KEYWORD:
+          parse_keyword();break;
+        case KEYWORD_OR_IDENT:
+          parse_keyword_or_ident();break;
+        case FUNCTION:
+          parse_function();break;
+        case FUNCTIONARGS:
+          parse_function_args();break;
+        case FORLOOP:
+          parse_forloop();break;
+        case WHILELOOP:
+          parse_whileloop();break;
+        case DOWHILELOOP:
+          parse_dowhileloop();break;
+        case RETURN:
+          parse_return();break;
+        case IF:
+          parse_if();break;
+        case QUANTIFIER:
+          parse_quantifier();break;
+      }
     }
   }
-  
+
   function end(tokens) {
-    if(arguments.length) {
-      write(tokens)
+    if (arguments.length) {
+      write(tokens);
     }
 
-    if(state.length > 1) {
-      unexpected('unexpected EOF')
-      return
+    if (state.length > 1) {
+      unexpected('unexpected EOF');
+      return;
     }
 
-    stream.emit('end')
+    stream.emit('end');
   }
 
   function take() {
-    if(errored || !state.length)
-      return false
+    if (errored || !state.length) return false;
 
-    return (token = tokens[0]) && !stream.paused
+    return (token = tokens[0]) && !stream.paused;
   }
 
   // ----- state manipulation --------
 
   function special_fake(x) {
-    state.unshift(x)
-    state.shift()
+    state.unshift(x);
+    state.shift();
   }
 
   function special_unshift(_node, add_child) {
-    _node.parent = state[0]
+    _node.parent = state[0];
 
-    var ret = [].unshift.call(this, _node)
+    var ret = [].unshift.call(this, _node);
 
-    add_child = add_child === undefined ? true : add_child
+    add_child = add_child === undefined ? true : add_child;
 
-    if(DEBUG) {
-      var pad = ''
-      for(var i = 0, len = this.length - 1; i < len; ++i) {
-        pad += ' |'
+    if (DEBUG) {
+      var pad = '';
+      for (var i = 0, len = this.length - 1; i < len; ++i) {
+        pad += ' |';
       }
-      console.log(pad, '\\'+_node.type, _node.token.data)
+      console.log(pad, '\\' + _node.type, _node.token.data);
     }
 
-    if(add_child && node !== _node) node.children.push(_node)
-    node = _node
+    if (add_child && node !== _node) node.children.push(_node);
+    node = _node;
 
-    return ret
+    return ret;
   }
 
   function special_shift() {
-    var _node = [].shift.call(this)
-      , okay = check[this.length]
-      , emit = false
+    var _node = [].shift.call(this),
+        okay = check[this.length],
+        emit = false;
 
-    if(DEBUG) {
-      var pad = ''
-      for(var i = 0, len = this.length; i < len; ++i) {
-        pad += ' |'
+    if (DEBUG) {
+      var pad = '';
+      for (var i = 0, len = this.length; i < len; ++i) {
+        pad += ' |';
       }
-      console.log(pad, '/'+_node.type)
+      console.log(pad, '/' + _node.type);
     }
 
-    if(check.length) { 
-      if(typeof check[0] === 'function') {
-        emit = check[0](_node)
-      } else if(okay !== undefined) {
-        emit = okay.test ? okay.test(_node.type) : okay === _node.type
+    if (check.length) {
+      if (typeof check[0] === 'function') {
+        emit = check[0](_node);
+      } else if (okay !== undefined) {
+        emit = okay.test ? okay.test(_node.type) : okay === _node.type;
       }
     } else {
-      emit = true
+      emit = true;
     }
 
-    if(emit) stream.emit('data', _node) 
-  
-    node = _node.parent
-    return _node
+    if (emit) stream.emit('data', _node);
+
+    node = _node.parent;
+    return _node;
   }
 
   // parse states ---------------
@@ -77322,315 +78346,319 @@ function parser() {
   function parse_stmtlist() {
     // determine the type of the statement
     // and then start parsing
-    return stative(
-      function() { state.scope.enter(); return Advance }
-    , normal_mode
-    )()
+    return stative(function () {
+      state.scope.enter();return Advance;
+    }, normal_mode)();
 
     function normal_mode() {
-      if(token.data === state[0].expecting) {
-        return state.scope.exit(), state.shift()
+      if (token.data === state[0].expecting) {
+        return state.scope.exit(), state.shift();
       }
-      switch(token.type) {
+      switch (token.type) {
         case 'preprocessor':
-          state.fake(adhoc())
-          tokens.shift()
-        return
+          state.fake(adhoc());
+          tokens.shift();
+          return;
         default:
-          state.unshift(stmt())
-        return 
+          state.unshift(stmt());
+          return;
       }
     }
   }
 
   function parse_stmt() {
-    if(state[0].brace) {
-      if(token.data !== '}') {
-        return unexpected('expected `}`, got '+token.data)
+    if (state[0].brace) {
+      if (token.data !== '}') {
+        return unexpected('expected `}`, got ' + token.data);
       }
-      state[0].brace = false
-      return tokens.shift(), state.shift()
+      state[0].brace = false;
+      return tokens.shift(), state.shift();
     }
-    switch(token.type) {
-      case 'eof': return state.shift()
-      case 'keyword': 
-        switch(token.data) {
-          case 'for': return state.unshift(forstmt());
-          case 'if': return state.unshift(ifstmt());
-          case 'while': return state.unshift(whilestmt());
-          case 'do': return state.unshift(dowhilestmt());
-          case 'break': return state.fake(mknode(BREAK, token)), tokens.shift()
-          case 'continue': return state.fake(mknode(CONTINUE, token)), tokens.shift()
-          case 'discard': return state.fake(mknode(DISCARD, token)), tokens.shift()
-          case 'return': return state.unshift(returnstmt());
-          case 'precision': return state.unshift(precision());
+    switch (token.type) {
+      case 'eof':
+        return state.shift();
+      case 'keyword':
+        switch (token.data) {
+          case 'for':
+            return state.unshift(forstmt());
+          case 'if':
+            return state.unshift(ifstmt());
+          case 'while':
+            return state.unshift(whilestmt());
+          case 'do':
+            return state.unshift(dowhilestmt());
+          case 'break':
+            return state.fake(mknode(BREAK, token)), tokens.shift();
+          case 'continue':
+            return state.fake(mknode(CONTINUE, token)), tokens.shift();
+          case 'discard':
+            return state.fake(mknode(DISCARD, token)), tokens.shift();
+          case 'return':
+            return state.unshift(returnstmt());
+          case 'precision':
+            return state.unshift(precision());
         }
-        return state.unshift(decl(DECL_STATEMENT))
+        return state.unshift(decl(DECL_STATEMENT));
       case 'ident':
-        var lookup
-        if(lookup = state.scope.find(token.data)) {
-          if(lookup.parent.type === 'struct') {
+        var lookup;
+        if (lookup = state.scope.find(token.data)) {
+          if (lookup.parent.type === 'struct') {
             // this is strictly untrue, you could have an
             // expr that starts with a struct constructor.
             //      ... sigh
-            return state.unshift(decl(DECL_STATEMENT))
+            return state.unshift(decl(DECL_STATEMENT));
           }
-          return state.unshift(expr(';'))
+          return state.unshift(expr(';'));
         }
       case 'operator':
-        if(token.data === '{') {
-          state[0].brace = true
-          var n = stmtlist()
-          n.expecting = '}'
-          return tokens.shift(), state.unshift(n)
+        if (token.data === '{') {
+          state[0].brace = true;
+          var n = stmtlist();
+          n.expecting = '}';
+          return tokens.shift(), state.unshift(n);
         }
-        if(token.data === ';') {
-          return tokens.shift(), state.shift()
+        if (token.data === ';') {
+          return tokens.shift(), state.shift();
         }
-      default: return state.unshift(expr(';'))
+      default:
+        return state.unshift(expr(';'));
     }
   }
 
   function parse_decl() {
-    var stmt = state[0]
+    var stmt = state[0];
 
-    return stative(
-      invariant_or_not,
-      storage_or_not,
-      parameter_or_not,
-      precision_or_not,
-      struct_or_type,
-      maybe_name,
-      maybe_lparen,     // lparen means we're a function
-      is_decllist,
-      done
-    )()
+    return stative(invariant_or_not, storage_or_not, parameter_or_not, precision_or_not, struct_or_type, maybe_name, maybe_lparen, // lparen means we're a function
+    is_decllist, done)();
 
     function invariant_or_not() {
-      if(token.data === 'invariant') {
-        if(stmt.flags & DECL_ALLOW_INVARIANT) {
-          state.unshift(keyword())
-          return Advance
+      if (token.data === 'invariant') {
+        if (stmt.flags & DECL_ALLOW_INVARIANT) {
+          state.unshift(keyword());
+          return Advance;
         } else {
-          return unexpected('`invariant` is not allowed here') 
+          return unexpected('`invariant` is not allowed here');
         }
       } else {
-        state.fake(mknode(PLACEHOLDER, {data: '', position: token.position}))
-        return Advance
+        state.fake(mknode(PLACEHOLDER, { data: '', position: token.position }));
+        return Advance;
       }
     }
 
     function storage_or_not() {
-      if(is_storage(token)) {
-        if(stmt.flags & DECL_ALLOW_STORAGE) {
-          state.unshift(keyword()) 
-          return Advance
+      if (is_storage(token)) {
+        if (stmt.flags & DECL_ALLOW_STORAGE) {
+          state.unshift(keyword());
+          return Advance;
         } else {
-          return unexpected('storage is not allowed here') 
+          return unexpected('storage is not allowed here');
         }
       } else {
-        state.fake(mknode(PLACEHOLDER, {data: '', position: token.position}))
-        return Advance
+        state.fake(mknode(PLACEHOLDER, { data: '', position: token.position }));
+        return Advance;
       }
     }
 
     function parameter_or_not() {
-      if(is_parameter(token)) {
-        if(!(stmt.flags & DECL_NO_INOUT)) {
-          state.unshift(keyword()) 
-          return Advance
+      if (is_parameter(token)) {
+        if (!(stmt.flags & DECL_NO_INOUT)) {
+          state.unshift(keyword());
+          return Advance;
         } else {
-          return unexpected('parameter is not allowed here') 
+          return unexpected('parameter is not allowed here');
         }
       } else {
-        state.fake(mknode(PLACEHOLDER, {data: '', position: token.position}))
-        return Advance
+        state.fake(mknode(PLACEHOLDER, { data: '', position: token.position }));
+        return Advance;
       }
     }
 
     function precision_or_not() {
-      if(is_precision(token)) {
-        state.unshift(keyword())
-        return Advance
+      if (is_precision(token)) {
+        state.unshift(keyword());
+        return Advance;
       } else {
-        state.fake(mknode(PLACEHOLDER, {data: '', position: token.position}))
-        return Advance
+        state.fake(mknode(PLACEHOLDER, { data: '', position: token.position }));
+        return Advance;
       }
     }
 
     function struct_or_type() {
-      if(token.data === 'struct') {
-        if(!(stmt.flags & DECL_ALLOW_STRUCT)) {
-          return unexpected('cannot nest structs')
+      if (token.data === 'struct') {
+        if (!(stmt.flags & DECL_ALLOW_STRUCT)) {
+          return unexpected('cannot nest structs');
         }
-        state.unshift(struct())
-        return Advance
+        state.unshift(struct());
+        return Advance;
       }
 
-      if(token.type === 'keyword') {
-        state.unshift(keyword())
-        return Advance
+      if (token.type === 'keyword') {
+        state.unshift(keyword());
+        return Advance;
       }
 
-      var lookup = state.scope.find(token.data)
+      var lookup = state.scope.find(token.data);
 
-      if(lookup) {
-        state.fake(Object.create(lookup))
-        tokens.shift()
-        return Advance  
+      if (lookup) {
+        state.fake(Object.create(lookup));
+        tokens.shift();
+        return Advance;
       }
-      return unexpected('expected user defined type, struct or keyword, got '+token.data)
+      return unexpected('expected user defined type, struct or keyword, got ' + token.data);
     }
 
     function maybe_name() {
-      if(token.data === ',' && !(stmt.flags & DECL_ALLOW_COMMA)) {
-        return state.shift()
+      if (token.data === ',' && !(stmt.flags & DECL_ALLOW_COMMA)) {
+        return state.shift();
       }
 
-      if(token.data === '[') {
+      if (token.data === '[') {
         // oh lord.
-        state.unshift(quantifier())
-        return
+        state.unshift(quantifier());
+        return;
       }
 
-      if(token.data === ')') return state.shift()
+      if (token.data === ')') return state.shift();
 
-      if(token.data === ';') {
-        return stmt.stage + 3
+      if (token.data === ';') {
+        return stmt.stage + 3;
       }
 
-      if(token.type !== 'ident') {
+      if (token.type !== 'ident') {
         console.log(token);
-        return unexpected('expected identifier, got '+token.data)
+        return unexpected('expected identifier, got ' + token.data);
       }
 
-      stmt.collected_name = tokens.shift()
-      return Advance      
+      stmt.collected_name = tokens.shift();
+      return Advance;
     }
 
     function maybe_lparen() {
-      if(token.data === '(') {
-        tokens.unshift(stmt.collected_name)
-        delete stmt.collected_name
-        state.unshift(fn())
-        return stmt.stage + 2 
+      if (token.data === '(') {
+        tokens.unshift(stmt.collected_name);
+        delete stmt.collected_name;
+        state.unshift(fn());
+        return stmt.stage + 2;
       }
-      return Advance
+      return Advance;
     }
 
     function is_decllist() {
-      tokens.unshift(stmt.collected_name)
-      delete stmt.collected_name
-      state.unshift(decllist())
-      return Advance
+      tokens.unshift(stmt.collected_name);
+      delete stmt.collected_name;
+      state.unshift(decllist());
+      return Advance;
     }
 
     function done() {
-      return state.shift()
+      return state.shift();
     }
   }
-  
+
   function parse_decllist() {
     // grab ident
 
-    if(token.type === 'ident') {
-      var name = token.data
-      state.unshift(ident())
-      state.scope.define(name)
-      return
+    if (token.type === 'ident') {
+      var name = token.data;
+      state.unshift(ident());
+      state.scope.define(name);
+      return;
     }
 
-    if(token.type === 'operator') {
+    if (token.type === 'operator') {
 
-      if(token.data === ',') {
+      if (token.data === ',') {
         // multi-decl!
-        if(!(state[1].flags & DECL_ALLOW_COMMA)) {
-          return state.shift()
+        if (!(state[1].flags & DECL_ALLOW_COMMA)) {
+          return state.shift();
         }
 
-        return tokens.shift()
-      } else if(token.data === '=') {
-        if(!(state[1].flags & DECL_ALLOW_ASSIGN)) return unexpected('`=` is not allowed here.')
+        return tokens.shift();
+      } else if (token.data === '=') {
+        if (!(state[1].flags & DECL_ALLOW_ASSIGN)) return unexpected('`=` is not allowed here.');
 
-        tokens.shift()
+        tokens.shift();
 
-        state.unshift(expr(',', ';'))
-        return
-      } else if(token.data === '[') {
-        state.unshift(quantifier())
-        return
+        state.unshift(expr(',', ';'));
+        return;
+      } else if (token.data === '[') {
+        state.unshift(quantifier());
+        return;
       }
     }
-    return state.shift()
+    return state.shift();
   }
 
   function parse_keyword_or_ident() {
-    if(token.type === 'keyword') {
-      state[0].type = 'keyword'
-      state[0].mode = KEYWORD
-      return
+    if (token.type === 'keyword') {
+      state[0].type = 'keyword';
+      state[0].mode = KEYWORD;
+      return;
     }
 
-    if(token.type === 'ident') {
-      state[0].type = 'ident'
-      state[0].mode = IDENT
-      return
+    if (token.type === 'ident') {
+      state[0].type = 'ident';
+      state[0].mode = IDENT;
+      return;
     }
 
-    return unexpected('expected keyword or user-defined name, got '+token.data)
+    return unexpected('expected keyword or user-defined name, got ' + token.data);
   }
 
   function parse_keyword() {
-    if(token.type !== 'keyword') {
-      return unexpected('expected keyword, got '+token.data)
+    if (token.type !== 'keyword') {
+      return unexpected('expected keyword, got ' + token.data);
     }
 
-    return state.shift(), tokens.shift()
+    return state.shift(), tokens.shift();
   }
 
   function parse_ident() {
-    if(token.type !== 'ident') {
-      return unexpected('expected user-defined name, got '+token.data)
+    if (token.type !== 'ident') {
+      return unexpected('expected user-defined name, got ' + token.data);
     }
 
-    state[0].data = token.data
-    return state.shift(), tokens.shift()
+    state[0].data = token.data;
+    return state.shift(), tokens.shift();
   }
 
-
   function parse_expr() {
-    var expecting = state[0].expecting
+    var expecting = state[0].expecting;
 
-    state[0].tokens = state[0].tokens || []
+    state[0].tokens = state[0].tokens || [];
 
-    if(state[0].parenlevel === undefined) {
-      state[0].parenlevel = 0
-      state[0].bracelevel = 0
+    if (state[0].parenlevel === undefined) {
+      state[0].parenlevel = 0;
+      state[0].bracelevel = 0;
     }
-    if(state[0].parenlevel < 1 && expecting.indexOf(token.data) > -1) {
-      return parseexpr(state[0].tokens)
+    if (state[0].parenlevel < 1 && expecting.indexOf(token.data) > -1) {
+      return parseexpr(state[0].tokens);
     }
-    if(token.data === '(') {
-      ++state[0].parenlevel
-    } else if(token.data === ')') {
-      --state[0].parenlevel
-    }
-
-    switch(token.data) {
-      case '{': ++state[0].bracelevel; break
-      case '}': --state[0].bracelevel; break
-      case '(': ++state[0].parenlevel; break
-      case ')': --state[0].parenlevel; break
+    if (token.data === '(') {
+      ++state[0].parenlevel;
+    } else if (token.data === ')') {
+      --state[0].parenlevel;
     }
 
-    if(state[0].parenlevel < 0) return unexpected('unexpected `)`')
-    if(state[0].bracelevel < 0) return unexpected('unexpected `}`')
+    switch (token.data) {
+      case '{':
+        ++state[0].bracelevel;break;
+      case '}':
+        --state[0].bracelevel;break;
+      case '(':
+        ++state[0].parenlevel;break;
+      case ')':
+        --state[0].parenlevel;break;
+    }
 
-    state[0].tokens.push(tokens.shift())
-    return
+    if (state[0].parenlevel < 0) return unexpected('unexpected `)`');
+    if (state[0].bracelevel < 0) return unexpected('unexpected `}`');
+
+    state[0].tokens.push(tokens.shift());
+    return;
 
     function parseexpr(tokens) {
-      return full_parse_expr(state, tokens), state.shift()
+      return full_parse_expr(state, tokens), state.shift();
     }
   }
 
@@ -77638,1036 +78666,701 @@ function parser() {
 
   function n(type) {
     // this is a function factory that suffices for most kinds of expressions and statements
-    return function() {
-      return mknode(type, token)
-    }
+    return function () {
+      return mknode(type, token);
+    };
   }
 
   function adhoc() {
-    return mknode(token_map[token.type], token, node)
+    return mknode(token_map[token.type], token, node);
   }
 
   function decl(flags) {
-    var _ = mknode(DECL, token, node)
-    _.flags = flags
+    var _ = mknode(DECL, token, node);
+    _.flags = flags;
 
-    return _
+    return _;
   }
 
   function struct(allow_assign, allow_comma) {
-    var _ = mknode(STRUCT, token, node)
-    _.allow_assign = allow_assign === undefined ? true : allow_assign
-    _.allow_comma = allow_comma === undefined ? true : allow_comma
-    return _
+    var _ = mknode(STRUCT, token, node);
+    _.allow_assign = allow_assign === undefined ? true : allow_assign;
+    _.allow_comma = allow_comma === undefined ? true : allow_comma;
+    return _;
   }
 
   function expr() {
-    var n = mknode(EXPR, token, node)
+    var n = mknode(EXPR, token, node);
 
-    n.expecting = [].slice.call(arguments)
-    return n
+    n.expecting = [].slice.call(arguments);
+    return n;
   }
-  
+
   function keyword(default_value) {
-    var t = token
-    if(default_value) {
-      t = {'type': '(implied)', data: '(default)', position: t.position} 
+    var t = token;
+    if (default_value) {
+      t = { 'type': '(implied)', data: '(default)', position: t.position };
     }
-    return mknode(KEYWORD, t, node)
+    return mknode(KEYWORD, t, node);
   }
 
   // utils ----------------------------
 
   function unexpected(str) {
-    errored = true
-    stream.emit('error', new Error(
-      (str || 'unexpected '+state) +
-      ' at line '+state[0].token.line
-    ))
+    errored = true;
+    stream.emit('error', new Error((str || 'unexpected ' + state) + ' at line ' + state[0].token.line));
   }
 
   function assert(type, data) {
-    return 1,
-      assert_null_string_or_array(type, token.type) && 
-      assert_null_string_or_array(data, token.data)
+    return 1, assert_null_string_or_array(type, token.type) && assert_null_string_or_array(data, token.data);
   }
 
   function assert_null_string_or_array(x, y) {
-    switch(typeof x) {
-      case 'string': if(y !== x) {
-        unexpected('expected `'+x+'`, got '+y+'\n'+token.data);
-      } return !errored
+    switch (typeof x === 'undefined' ? 'undefined' : _typeof(x)) {
+      case 'string':
+        if (y !== x) {
+          unexpected('expected `' + x + '`, got ' + y + '\n' + token.data);
+        }return !errored;
 
-      case 'object': if(x && x.indexOf(y) === -1) {
-        unexpected('expected one of `'+x.join('`, `')+'`, got '+y);
-      } return !errored
+      case 'object':
+        if (x && x.indexOf(y) === -1) {
+          unexpected('expected one of `' + x.join('`, `') + '`, got ' + y);
+        }return !errored;
     }
-    return true
+    return true;
   }
 
   // stative ----------------------------
 
   function stative() {
-    var steps = [].slice.call(arguments)
-      , step
-      , result
+    var steps = [].slice.call(arguments),
+        step,
+        result;
 
-    return function() {
-      var current = state[0]
+    return function () {
+      var current = state[0];
 
-      current.stage || (current.stage = 0)
+      current.stage || (current.stage = 0);
 
-      step = steps[current.stage]
-      if(!step) return unexpected('parser in undefined state!')
+      step = steps[current.stage];
+      if (!step) return unexpected('parser in undefined state!');
 
-      result = step()
+      result = step();
 
-      if(result === Advance) return ++current.stage
-      if(result === undefined) return
-      current.stage = result
-    } 
+      if (result === Advance) return ++current.stage;
+      if (result === undefined) return;
+      current.stage = result;
+    };
   }
 
   function advance(op, t) {
-    t = t || 'operator'
-    return function() {
-      if(!assert(t, op)) return
+    t = t || 'operator';
+    return function () {
+      if (!assert(t, op)) return;
 
-      var last = tokens.shift()
-        , children = state[0].children
-        , last_node = children[children.length - 1]
+      var last = tokens.shift(),
+          children = state[0].children,
+          last_node = children[children.length - 1];
 
-      if(last_node && last_node.token && last.preceding) {
-        last_node.token.succeeding = last_node.token.succeeding || []
-        last_node.token.succeeding = last_node.token.succeeding.concat(last.preceding)
+      if (last_node && last_node.token && last.preceding) {
+        last_node.token.succeeding = last_node.token.succeeding || [];
+        last_node.token.succeeding = last_node.token.succeeding.concat(last.preceding);
       }
-      return Advance
-    }
+      return Advance;
+    };
   }
 
   function advance_expr(until) {
-    return function() { return state.unshift(expr(until)), Advance }
+    return function () {
+      return state.unshift(expr(until)), Advance;
+    };
   }
 
   function advance_ident(declare) {
-    return declare ? function() {
-      var name = token.data
-      return assert('ident') && (state.unshift(ident()), state.scope.define(name), Advance)
-    } :  function() {
-      if(!assert('ident')) return
+    return declare ? function () {
+      var name = token.data;
+      return assert('ident') && (state.unshift(ident()), state.scope.define(name), Advance);
+    } : function () {
+      if (!assert('ident')) return;
 
-      var s = Object.create(state.scope.find(token.data))
-      s.token = token
+      var s = Object.create(state.scope.find(token.data));
+      s.token = token;
 
-      return (tokens.shift(), Advance)
-    }
+      return tokens.shift(), Advance;
+    };
   }
 
   function advance_stmtlist() {
-    return function() {
-      var n = stmtlist()
-      n.expecting = '}'
-      return state.unshift(n), Advance
-    }
+    return function () {
+      var n = stmtlist();
+      n.expecting = '}';
+      return state.unshift(n), Advance;
+    };
   }
 
   function maybe_stmtlist(skip) {
-    return function() {
-      var current = state[0].stage
-      if(token.data !== '{') { return state.unshift(stmt()), current + skip }
-      return tokens.shift(), Advance
-    }
+    return function () {
+      var current = state[0].stage;
+      if (token.data !== '{') {
+        return state.unshift(stmt()), current + skip;
+      }
+      return tokens.shift(), Advance;
+    };
   }
 
   function popstmt() {
-    return function() { return state.shift(), state.shift() }
+    return function () {
+      return state.shift(), state.shift();
+    };
   }
-
 
   function setup_stative_parsers() {
 
     // could also be
     // struct { } decllist
-    parse_struct =
-        stative(
-          advance('struct', 'keyword')
-        , function() {
-            if(token.data === '{') {
-              state.fake(mknode(IDENT, {data:'', position: token.position, type:'ident'}))
-              return Advance
-            }
+    parse_struct = stative(advance('struct', 'keyword'), function () {
+      if (token.data === '{') {
+        state.fake(mknode(IDENT, { data: '', position: token.position, type: 'ident' }));
+        return Advance;
+      }
 
-            return advance_ident(true)()
-          }
-        , function() { state.scope.enter(); return Advance }
-        , advance('{')
-        , function() {
-            if(token.data === '}') {
-              state.scope.exit()
-              tokens.shift()
-              return state.shift()
-            }
-            if(token.data === ';') { tokens.shift(); return }
-            state.unshift(decl(DECL_STRUCT))
-          }
-        )
+      return advance_ident(true)();
+    }, function () {
+      state.scope.enter();return Advance;
+    }, advance('{'), function () {
+      if (token.data === '}') {
+        state.scope.exit();
+        tokens.shift();
+        return state.shift();
+      }
+      if (token.data === ';') {
+        tokens.shift();return;
+      }
+      state.unshift(decl(DECL_STRUCT));
+    });
 
-    parse_precision =
-        stative(
-          function() { return tokens.shift(), Advance }
-        , function() { 
-            return assert(
-            'keyword', ['lowp', 'mediump', 'highp']
-            ) && (state.unshift(keyword()), Advance) 
-          }
-        , function() { return (state.unshift(keyword()), Advance) }
-        , function() { return state.shift() } 
-        )
+    parse_precision = stative(function () {
+      return tokens.shift(), Advance;
+    }, function () {
+      return assert('keyword', ['lowp', 'mediump', 'highp']) && (state.unshift(keyword()), Advance);
+    }, function () {
+      return state.unshift(keyword()), Advance;
+    }, function () {
+      return state.shift();
+    });
 
-    parse_quantifier =
-        stative(
-          advance('[')
-        , advance_expr(']')
-        , advance(']')
-        , function() { return state.shift() }
-        )
+    parse_quantifier = stative(advance('['), advance_expr(']'), advance(']'), function () {
+      return state.shift();
+    });
 
-    parse_forloop = 
-        stative(
-          advance('for', 'keyword')
-        , advance('(')
-        , function() {
-            var lookup
-            if(token.type === 'ident') {
-              if(!(lookup = state.scope.find(token.data))) {
-                lookup = state.create_node()
-              }
-             
-              if(lookup.parent.type === 'struct') {
-                return state.unshift(decl(DECL_STATEMENT)), Advance
-              }
-            } else if(token.type === 'builtin' || token.type === 'keyword') {
-              return state.unshift(decl(DECL_STATEMENT)), Advance
-            }
-            return advance_expr(';')()
-          }
-        , advance(';')
-        , advance_expr(';')
-        , advance(';')
-        , advance_expr(')')
-        , advance(')')
-        , maybe_stmtlist(3)
-        , advance_stmtlist()
-        , advance('}')
-        , popstmt()
-        )
-
-    parse_if = 
-        stative(
-          advance('if', 'keyword')
-        , advance('(')
-        , advance_expr(')')
-        , advance(')')
-        , maybe_stmtlist(3)
-        , advance_stmtlist()
-        , advance('}')
-        , function() {
-            if(token.data === 'else') {
-              return tokens.shift(), state.unshift(stmt()), Advance
-            }
-            return popstmt()()
-          }
-        , popstmt()
-        )
-
-    parse_return =
-        stative(
-          advance('return', 'keyword')
-        , function() {
-            if(token.data === ';') return Advance
-            return state.unshift(expr(';')), Advance
-          }
-        , function() { tokens.shift(), popstmt()() } 
-        )
-
-    parse_whileloop =
-        stative(
-          advance('while', 'keyword')
-        , advance('(')
-        , advance_expr(')')
-        , advance(')')
-        , maybe_stmtlist(3)
-        , advance_stmtlist()
-        , advance('}')
-        , popstmt()
-        )
-
-    parse_dowhileloop = 
-      stative(
-        advance('do', 'keyword')
-      , maybe_stmtlist(3)
-      , advance_stmtlist()
-      , advance('}')
-      , advance('while', 'keyword')
-      , advance('(')
-      , advance_expr(')')
-      , advance(')')
-      , popstmt()
-      )
-
-    parse_function =
-      stative(
-        function() {
-          for(var i = 1, len = state.length; i < len; ++i) if(state[i].mode === FUNCTION) {
-            return unexpected('function definition is not allowed within another function')
-          }
-
-          return Advance
+    parse_forloop = stative(advance('for', 'keyword'), advance('('), function () {
+      var lookup;
+      if (token.type === 'ident') {
+        if (!(lookup = state.scope.find(token.data))) {
+          lookup = state.create_node();
         }
-      , function() {
-          if(!assert("ident")) return
 
-          var name = token.data
-            , lookup = state.scope.find(name)
+        if (lookup.parent.type === 'struct') {
+          return state.unshift(decl(DECL_STATEMENT)), Advance;
+        }
+      } else if (token.type === 'builtin' || token.type === 'keyword') {
+        return state.unshift(decl(DECL_STATEMENT)), Advance;
+      }
+      return advance_expr(';')();
+    }, advance(';'), advance_expr(';'), advance(';'), advance_expr(')'), advance(')'), maybe_stmtlist(3), advance_stmtlist(), advance('}'), popstmt());
 
-          state.unshift(ident())
-          state.scope.define(name)
+    parse_if = stative(advance('if', 'keyword'), advance('('), advance_expr(')'), advance(')'), maybe_stmtlist(3), advance_stmtlist(), advance('}'), function () {
+      if (token.data === 'else') {
+        return tokens.shift(), state.unshift(stmt()), Advance;
+      }
+      return popstmt()();
+    }, popstmt());
 
-          state.scope.enter(lookup ? lookup.scope : null)
-          return Advance
-        }
-      , advance('(')
-      , function() { return state.unshift(fnargs()), Advance }
-      , advance(')')
-      , function() { 
-          // forward decl
-          if(token.data === ';') {
-            return state.scope.exit(), state.shift(), state.shift()
-          }
-          return Advance
-        }
-      , advance('{')
-      , advance_stmtlist()
-      , advance('}')
-      , function() { state.scope.exit(); return Advance } 
-      , function() { return state.shift(), state.shift(), state.shift() }
-      )
+    parse_return = stative(advance('return', 'keyword'), function () {
+      if (token.data === ';') return Advance;
+      return state.unshift(expr(';')), Advance;
+    }, function () {
+      tokens.shift(), popstmt()();
+    });
 
-    parse_function_args =
-      stative(
-        function() {
-          if(token.data === 'void') { state.fake(keyword()); tokens.shift(); return Advance }
-          if(token.data === ')') { state.shift(); return }
-          if(token.data === 'struct') {
-            state.unshift(struct(NO_ASSIGN_ALLOWED, NO_COMMA_ALLOWED))
-            return Advance
-          }
-          state.unshift(decl(DECL_FUNCTION))
-          return Advance
+    parse_whileloop = stative(advance('while', 'keyword'), advance('('), advance_expr(')'), advance(')'), maybe_stmtlist(3), advance_stmtlist(), advance('}'), popstmt());
+
+    parse_dowhileloop = stative(advance('do', 'keyword'), maybe_stmtlist(3), advance_stmtlist(), advance('}'), advance('while', 'keyword'), advance('('), advance_expr(')'), advance(')'), popstmt());
+
+    parse_function = stative(function () {
+      for (var i = 1, len = state.length; i < len; ++i) {
+        if (state[i].mode === FUNCTION) {
+          return unexpected('function definition is not allowed within another function');
         }
-      , function() {
-          if(token.data === ',') { tokens.shift(); return 0 }
-          if(token.data === ')') { state.shift(); return }
-          unexpected('expected one of `,` or `)`, got '+token.data)
-        }
-      )
+      }return Advance;
+    }, function () {
+      if (!assert("ident")) return;
+
+      var name = token.data,
+          lookup = state.scope.find(name);
+
+      state.unshift(ident());
+      state.scope.define(name);
+
+      state.scope.enter(lookup ? lookup.scope : null);
+      return Advance;
+    }, advance('('), function () {
+      return state.unshift(fnargs()), Advance;
+    }, advance(')'), function () {
+      // forward decl
+      if (token.data === ';') {
+        return state.scope.exit(), state.shift(), state.shift();
+      }
+      return Advance;
+    }, advance('{'), advance_stmtlist(), advance('}'), function () {
+      state.scope.exit();return Advance;
+    }, function () {
+      return state.shift(), state.shift(), state.shift();
+    });
+
+    parse_function_args = stative(function () {
+      if (token.data === 'void') {
+        state.fake(keyword());tokens.shift();return Advance;
+      }
+      if (token.data === ')') {
+        state.shift();return;
+      }
+      if (token.data === 'struct') {
+        state.unshift(struct(NO_ASSIGN_ALLOWED, NO_COMMA_ALLOWED));
+        return Advance;
+      }
+      state.unshift(decl(DECL_FUNCTION));
+      return Advance;
+    }, function () {
+      if (token.data === ',') {
+        tokens.shift();return 0;
+      }
+      if (token.data === ')') {
+        state.shift();return;
+      }
+      unexpected('expected one of `,` or `)`, got ' + token.data);
+    });
   }
 }
 
 function mknode(mode, sourcetoken) {
   return {
-      mode: mode
-    , token: sourcetoken
-    , children: []
-    , type: stmt_type[mode]
-//    , id: (Math.random() * 0xFFFFFFFF).toString(16)
-  }
+    mode: mode,
+    token: sourcetoken,
+    children: [],
+    type: stmt_type[mode]
+    //    , id: (Math.random() * 0xFFFFFFFF).toString(16)
+  };
 }
 
 function is_storage(token) {
-  return token.data === 'const' ||
-         token.data === 'attribute' ||
-         token.data === 'uniform' ||
-         token.data === 'varying'
+  return token.data === 'const' || token.data === 'attribute' || token.data === 'uniform' || token.data === 'varying';
 }
 
 function is_parameter(token) {
-  return token.data === 'in' ||
-         token.data === 'inout' ||
-         token.data === 'out'
+  return token.data === 'in' || token.data === 'inout' || token.data === 'out';
 }
 
 function is_precision(token) {
-  return token.data === 'highp' ||
-         token.data === 'mediump' ||
-         token.data === 'lowp'
+  return token.data === 'highp' || token.data === 'mediump' || token.data === 'lowp';
 }
 
 },{"../../through":227,"./expr":220,"./scope":222}],222:[function(require,module,exports){
-module.exports = scope
+"use strict";
+
+module.exports = scope;
 
 function scope(state) {
-  if(this.constructor !== scope)
-    return new scope(state)
+  if (this.constructor !== scope) return new scope(state);
 
-  this.state = state
-  this.scopes = []
-  this.current = null
+  this.state = state;
+  this.scopes = [];
+  this.current = null;
 }
 
-var cons = scope
-  , proto = cons.prototype
+var cons = scope,
+    proto = cons.prototype;
 
-proto.enter = function(s) {
-  this.scopes.push(
-    this.current = this.state[0].scope = s || {}
-  )
-}
+proto.enter = function (s) {
+  this.scopes.push(this.current = this.state[0].scope = s || {});
+};
 
-proto.exit = function() {
-  this.scopes.pop()
-  this.current = this.scopes[this.scopes.length - 1]
-}
+proto.exit = function () {
+  this.scopes.pop();
+  this.current = this.scopes[this.scopes.length - 1];
+};
 
-proto.define = function(str) {
-  this.current[str] = this.state[0]
-}
+proto.define = function (str) {
+  this.current[str] = this.state[0];
+};
 
-proto.find = function(name, fail) {
-  for(var i = this.scopes.length - 1; i > -1; --i) {
-    if(this.scopes[i].hasOwnProperty(name)) {
-      return this.scopes[i][name]
+proto.find = function (name, fail) {
+  for (var i = this.scopes.length - 1; i > -1; --i) {
+    if (this.scopes[i].hasOwnProperty(name)) {
+      return this.scopes[i][name];
     }
   }
 
-  return null
-}
+  return null;
+};
 
 },{}],223:[function(require,module,exports){
-module.exports = tokenize
+'use strict';
 
-var through = require('../through')
+module.exports = tokenize;
 
-var literals = require('./lib/literals')
-  , operators = require('./lib/operators')
-  , builtins = require('./lib/builtins')
+var through = require('../through');
 
-var NORMAL = 999          // <-- never emitted
-  , TOKEN = 9999          // <-- never emitted 
-  , BLOCK_COMMENT = 0 
-  , LINE_COMMENT = 1
-  , PREPROCESSOR = 2
-  , OPERATOR = 3
-  , INTEGER = 4
-  , FLOAT = 5
-  , IDENT = 6
-  , BUILTIN = 7
-  , KEYWORD = 8
-  , WHITESPACE = 9
-  , EOF = 10 
-  , HEX = 11
+var literals = require('./lib/literals'),
+    operators = require('./lib/operators'),
+    builtins = require('./lib/builtins');
 
-var map = [
-    'block-comment'
-  , 'line-comment'
-  , 'preprocessor'
-  , 'operator'
-  , 'integer'
-  , 'float'
-  , 'ident'
-  , 'builtin'
-  , 'keyword'
-  , 'whitespace'
-  , 'eof'
-  , 'integer'
-]
+var NORMAL = 999 // <-- never emitted
+,
+    TOKEN = 9999 // <-- never emitted 
+,
+    BLOCK_COMMENT = 0,
+    LINE_COMMENT = 1,
+    PREPROCESSOR = 2,
+    OPERATOR = 3,
+    INTEGER = 4,
+    FLOAT = 5,
+    IDENT = 6,
+    BUILTIN = 7,
+    KEYWORD = 8,
+    WHITESPACE = 9,
+    EOF = 10,
+    HEX = 11;
+
+var map = ['block-comment', 'line-comment', 'preprocessor', 'operator', 'integer', 'float', 'ident', 'builtin', 'keyword', 'whitespace', 'eof', 'integer'];
 
 function tokenize() {
-  var stream = through(write, end)
+  var stream = through(write, end);
 
-  var i = 0
-    , total = 0
-    , mode = NORMAL 
-    , c
-    , last
-    , content = []
-    , token_idx = 0
-    , token_offs = 0
-    , line = 1
-    , start = 0
-    , isnum = false
-    , isoperator = false
-    , input = ''
-    , len
+  var i = 0,
+      total = 0,
+      mode = NORMAL,
+      c,
+      last,
+      content = [],
+      token_idx = 0,
+      token_offs = 0,
+      line = 1,
+      start = 0,
+      isnum = false,
+      isoperator = false,
+      input = '',
+      len;
 
-  return stream
+  return stream;
 
   function token(data) {
-    if(data.length) {
+    if (data.length) {
       stream.queue({
-        type: map[mode]
-      , data: data
-      , position: start
-      , line: line
-      })
+        type: map[mode],
+        data: data,
+        position: start,
+        line: line
+      });
     }
   }
 
   function write(chunk) {
-    i = 0
-    input += chunk.toString()
-    len = input.length
+    i = 0;
+    input += chunk.toString();
+    len = input.length;
 
-    while(c = input[i], i < len) switch(mode) {
-      case BLOCK_COMMENT: i = block_comment(); break
-      case LINE_COMMENT: i = line_comment(); break
-      case PREPROCESSOR: i = preprocessor(); break 
-      case OPERATOR: i = operator(); break
-      case INTEGER: i = integer(); break
-      case HEX: i = hex(); break
-      case FLOAT: i = decimal(); break
-      case TOKEN: i = readtoken(); break
-      case WHITESPACE: i = whitespace(); break
-      case NORMAL: i = normal(); break
-    }
-
-    total += i
-    input = input.slice(i)
-  } 
+    while (c = input[i], i < len) {
+      switch (mode) {
+        case BLOCK_COMMENT:
+          i = block_comment();break;
+        case LINE_COMMENT:
+          i = line_comment();break;
+        case PREPROCESSOR:
+          i = preprocessor();break;
+        case OPERATOR:
+          i = operator();break;
+        case INTEGER:
+          i = integer();break;
+        case HEX:
+          i = hex();break;
+        case FLOAT:
+          i = decimal();break;
+        case TOKEN:
+          i = readtoken();break;
+        case WHITESPACE:
+          i = whitespace();break;
+        case NORMAL:
+          i = normal();break;
+      }
+    }total += i;
+    input = input.slice(i);
+  }
 
   function end(chunk) {
-    if(content.length) {
-      token(content.join(''))
+    if (content.length) {
+      token(content.join(''));
     }
 
-    mode = EOF
-    token('(eof)')
+    mode = EOF;
+    token('(eof)');
 
-    stream.queue(null)
+    stream.queue(null);
   }
 
   function normal() {
-    content = content.length ? [] : content
+    content = content.length ? [] : content;
 
-    if(last === '/' && c === '*') {
-      start = total + i - 1
-      mode = BLOCK_COMMENT
-      last = c
-      return i + 1
+    if (last === '/' && c === '*') {
+      start = total + i - 1;
+      mode = BLOCK_COMMENT;
+      last = c;
+      return i + 1;
     }
 
-    if(last === '/' && c === '/') {
-      start = total + i - 1
-      mode = LINE_COMMENT
-      last = c
-      return i + 1
+    if (last === '/' && c === '/') {
+      start = total + i - 1;
+      mode = LINE_COMMENT;
+      last = c;
+      return i + 1;
     }
 
-    if(c === '#') {
-      mode = PREPROCESSOR
-      start = total + i
-      return i
+    if (c === '#') {
+      mode = PREPROCESSOR;
+      start = total + i;
+      return i;
     }
 
-    if(/\s/.test(c)) {
-      mode = WHITESPACE
-      start = total + i
-      return i
+    if (/\s/.test(c)) {
+      mode = WHITESPACE;
+      start = total + i;
+      return i;
     }
 
-    isnum = /\d/.test(c)
-    isoperator = /[^\w_]/.test(c)
+    isnum = /\d/.test(c);
+    isoperator = /[^\w_]/.test(c);
 
-    start = total + i
-    mode = isnum ? INTEGER : isoperator ? OPERATOR : TOKEN
-    return i
+    start = total + i;
+    mode = isnum ? INTEGER : isoperator ? OPERATOR : TOKEN;
+    return i;
   }
 
   function whitespace() {
-    if(c === '\n') ++line
+    if (c === '\n') ++line;
 
-    if(/[^\s]/g.test(c)) {
-      token(content.join(''))
-      mode = NORMAL
-      return i
+    if (/[^\s]/g.test(c)) {
+      token(content.join(''));
+      mode = NORMAL;
+      return i;
     }
-    content.push(c)
-    last = c
-    return i + 1
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 
   function preprocessor() {
-    if(c === '\n') ++line
+    if (c === '\n') ++line;
 
-    if(c === '\n' && last !== '\\') {
-      token(content.join(''))
-      mode = NORMAL
-      return i
+    if (c === '\n' && last !== '\\') {
+      token(content.join(''));
+      mode = NORMAL;
+      return i;
     }
-    content.push(c)
-    last = c
-    return i + 1
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 
   function line_comment() {
-    return preprocessor()
+    return preprocessor();
   }
 
   function block_comment() {
-    if(c === '/' && last === '*') {
-      content.push(c)
-      token(content.join(''))
-      mode = NORMAL
-      return i + 1
+    if (c === '/' && last === '*') {
+      content.push(c);
+      token(content.join(''));
+      mode = NORMAL;
+      return i + 1;
     }
 
-    if(c === '\n') ++line
+    if (c === '\n') ++line;
 
-    content.push(c)
-    last = c
-    return i + 1
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 
   function operator() {
-    if(last === '.' && /\d/.test(c)) {
-      mode = FLOAT
-      return i
+    if (last === '.' && /\d/.test(c)) {
+      mode = FLOAT;
+      return i;
     }
 
-    if(last === '/' && c === '*') {
-      mode = BLOCK_COMMENT
-      return i
+    if (last === '/' && c === '*') {
+      mode = BLOCK_COMMENT;
+      return i;
     }
 
-    if(last === '/' && c === '/') {
-      mode = LINE_COMMENT
-      return i
+    if (last === '/' && c === '/') {
+      mode = LINE_COMMENT;
+      return i;
     }
 
-    if(c === '.' && content.length) {
-      while(determine_operator(content));
-      
-      mode = FLOAT
-      return i
+    if (c === '.' && content.length) {
+      while (determine_operator(content)) {}
+
+      mode = FLOAT;
+      return i;
     }
 
-    if(c === ';') {
-      if(content.length) while(determine_operator(content));
-      token(c)
-      mode = NORMAL
-      return i + 1
+    if (c === ';') {
+      if (content.length) while (determine_operator(content)) {}
+      token(c);
+      mode = NORMAL;
+      return i + 1;
     }
 
-    var is_composite_operator = content.length === 2 && c !== '='
-    if(/[\w_\d\s]/.test(c) || is_composite_operator) {
-      while(determine_operator(content));
-      mode = NORMAL
-      return i
+    var is_composite_operator = content.length === 2 && c !== '=';
+    if (/[\w_\d\s]/.test(c) || is_composite_operator) {
+      while (determine_operator(content)) {}
+      mode = NORMAL;
+      return i;
     }
 
-    content.push(c)
-    last = c
-    return i + 1
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 
   function determine_operator(buf) {
-    var j = 0
-      , k = buf.length
-      , idx
+    var j = 0,
+        k = buf.length,
+        idx;
 
     do {
-      idx = operators.indexOf(buf.slice(0, buf.length + j).join(''))
-      if(idx === -1) { 
-        j -= 1
-        k -= 1
-        if (k < 0) return 0
-        continue
+      idx = operators.indexOf(buf.slice(0, buf.length + j).join(''));
+      if (idx === -1) {
+        j -= 1;
+        k -= 1;
+        if (k < 0) return 0;
+        continue;
       }
-      
-      token(operators[idx])
 
-      start += operators[idx].length
-      content = content.slice(operators[idx].length)
-      return content.length
-    } while(1)
+      token(operators[idx]);
+
+      start += operators[idx].length;
+      content = content.slice(operators[idx].length);
+      return content.length;
+    } while (1);
   }
 
   function hex() {
-    if(/[^a-fA-F0-9]/.test(c)) {
-      token(content.join(''))
-      mode = NORMAL
-      return i
+    if (/[^a-fA-F0-9]/.test(c)) {
+      token(content.join(''));
+      mode = NORMAL;
+      return i;
     }
 
-    content.push(c)
-    last = c
-    return i + 1    
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 
   function integer() {
-    if(c === '.') {
-      content.push(c)
-      mode = FLOAT
-      last = c
-      return i + 1
+    if (c === '.') {
+      content.push(c);
+      mode = FLOAT;
+      last = c;
+      return i + 1;
     }
 
-    if(/[eE]/.test(c)) {
-      content.push(c)
-      mode = FLOAT
-      last = c
-      return i + 1
+    if (/[eE]/.test(c)) {
+      content.push(c);
+      mode = FLOAT;
+      last = c;
+      return i + 1;
     }
 
-    if(c === 'x' && content.length === 1 && content[0] === '0') {
-      mode = HEX
-      content.push(c)
-      last = c
-      return i + 1
+    if (c === 'x' && content.length === 1 && content[0] === '0') {
+      mode = HEX;
+      content.push(c);
+      last = c;
+      return i + 1;
     }
 
-    if(/[^\d]/.test(c)) {
-      token(content.join(''))
-      mode = NORMAL
-      return i
+    if (/[^\d]/.test(c)) {
+      token(content.join(''));
+      mode = NORMAL;
+      return i;
     }
 
-    content.push(c)
-    last = c
-    return i + 1
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 
   function decimal() {
-    if(c === 'f') {
-      content.push(c)
-      last = c
-      i += 1
+    if (c === 'f') {
+      content.push(c);
+      last = c;
+      i += 1;
     }
 
-    if(/[eE]/.test(c)) {
-      content.push(c)
-      last = c
-      return i + 1
+    if (/[eE]/.test(c)) {
+      content.push(c);
+      last = c;
+      return i + 1;
     }
 
-    if(/[^\d]/.test(c)) {
-      token(content.join(''))
-      mode = NORMAL
-      return i
+    if (/[^\d]/.test(c)) {
+      token(content.join(''));
+      mode = NORMAL;
+      return i;
     }
-    content.push(c)
-    last = c
-    return i + 1
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 
   function readtoken() {
-    if(/[^\d\w_]/.test(c)) {
-      var contentstr = content.join('')
-      if(literals.indexOf(contentstr) > -1) {
-        mode = KEYWORD
-      } else if(builtins.indexOf(contentstr) > -1) {
-        mode = BUILTIN
+    if (/[^\d\w_]/.test(c)) {
+      var contentstr = content.join('');
+      if (literals.indexOf(contentstr) > -1) {
+        mode = KEYWORD;
+      } else if (builtins.indexOf(contentstr) > -1) {
+        mode = BUILTIN;
       } else {
-        mode = IDENT
+        mode = IDENT;
       }
-      token(content.join(''))
-      mode = NORMAL
-      return i
+      token(content.join(''));
+      mode = NORMAL;
+      return i;
     }
-    content.push(c)
-    last = c
-    return i + 1
+    content.push(c);
+    last = c;
+    return i + 1;
   }
 }
 
 },{"../through":227,"./lib/builtins":224,"./lib/literals":225,"./lib/operators":226}],224:[function(require,module,exports){
-module.exports = [
-    'gl_Position'
-  , 'gl_PointSize'
-  , 'gl_ClipVertex'
-  , 'gl_FragCoord'
-  , 'gl_FrontFacing'
-  , 'gl_FragColor'
-  , 'gl_FragData'
-  , 'gl_FragDepth'
-  , 'gl_Color'
-  , 'gl_SecondaryColor'
-  , 'gl_Normal'
-  , 'gl_Vertex'
-  , 'gl_MultiTexCoord0'
-  , 'gl_MultiTexCoord1'
-  , 'gl_MultiTexCoord2'
-  , 'gl_MultiTexCoord3'
-  , 'gl_MultiTexCoord4'
-  , 'gl_MultiTexCoord5'
-  , 'gl_MultiTexCoord6'
-  , 'gl_MultiTexCoord7'
-  , 'gl_FogCoord'
-  , 'gl_MaxLights'
-  , 'gl_MaxClipPlanes'
-  , 'gl_MaxTextureUnits'
-  , 'gl_MaxTextureCoords'
-  , 'gl_MaxVertexAttribs'
-  , 'gl_MaxVertexUniformComponents'
-  , 'gl_MaxVaryingFloats'
-  , 'gl_MaxVertexTextureImageUnits'
-  , 'gl_MaxCombinedTextureImageUnits'
-  , 'gl_MaxTextureImageUnits'
-  , 'gl_MaxFragmentUniformComponents'
-  , 'gl_MaxDrawBuffers'
-  , 'gl_ModelViewMatrix'
-  , 'gl_ProjectionMatrix'
-  , 'gl_ModelViewProjectionMatrix'
-  , 'gl_TextureMatrix'
-  , 'gl_NormalMatrix'
-  , 'gl_ModelViewMatrixInverse'
-  , 'gl_ProjectionMatrixInverse'
-  , 'gl_ModelViewProjectionMatrixInverse'
-  , 'gl_TextureMatrixInverse'
-  , 'gl_ModelViewMatrixTranspose'
-  , 'gl_ProjectionMatrixTranspose'
-  , 'gl_ModelViewProjectionMatrixTranspose'
-  , 'gl_TextureMatrixTranspose'
-  , 'gl_ModelViewMatrixInverseTranspose'
-  , 'gl_ProjectionMatrixInverseTranspose'
-  , 'gl_ModelViewProjectionMatrixInverseTranspose'
-  , 'gl_TextureMatrixInverseTranspose'
-  , 'gl_NormalScale'
-  , 'gl_DepthRangeParameters'
-  , 'gl_DepthRange'
-  , 'gl_ClipPlane'
-  , 'gl_PointParameters'
-  , 'gl_Point'
-  , 'gl_MaterialParameters'
-  , 'gl_FrontMaterial'
-  , 'gl_BackMaterial'
-  , 'gl_LightSourceParameters'
-  , 'gl_LightSource'
-  , 'gl_LightModelParameters'
-  , 'gl_LightModel'
-  , 'gl_LightModelProducts'
-  , 'gl_FrontLightModelProduct'
-  , 'gl_BackLightModelProduct'
-  , 'gl_LightProducts'
-  , 'gl_FrontLightProduct'
-  , 'gl_BackLightProduct'
-  , 'gl_FogParameters'
-  , 'gl_Fog'
-  , 'gl_TextureEnvColor'
-  , 'gl_EyePlaneS'
-  , 'gl_EyePlaneT'
-  , 'gl_EyePlaneR'
-  , 'gl_EyePlaneQ'
-  , 'gl_ObjectPlaneS'
-  , 'gl_ObjectPlaneT'
-  , 'gl_ObjectPlaneR'
-  , 'gl_ObjectPlaneQ'
-  , 'gl_FrontColor'
-  , 'gl_BackColor'
-  , 'gl_FrontSecondaryColor'
-  , 'gl_BackSecondaryColor'
-  , 'gl_TexCoord'
-  , 'gl_FogFragCoord'
-  , 'gl_Color'
-  , 'gl_SecondaryColor'
-  , 'gl_TexCoord'
-  , 'gl_FogFragCoord'
-  , 'gl_PointCoord'
-  , 'radians'
-  , 'degrees'
-  , 'sin'
-  , 'cos'
-  , 'tan'
-  , 'asin'
-  , 'acos'
-  , 'atan'
-  , 'pow'
-  , 'exp'
-  , 'log'
-  , 'exp2'
-  , 'log2'
-  , 'sqrt'
-  , 'inversesqrt'
-  , 'abs'
-  , 'sign'
-  , 'floor'
-  , 'ceil'
-  , 'fract'
-  , 'mod'
-  , 'min'
-  , 'max'
-  , 'clamp'
-  , 'mix'
-  , 'step'
-  , 'smoothstep'
-  , 'length'
-  , 'distance'
-  , 'dot'
-  , 'cross'
-  , 'normalize'
-  , 'faceforward'
-  , 'reflect'
-  , 'refract'
-  , 'matrixCompMult'
-  , 'lessThan'
-  , 'lessThanEqual'
-  , 'greaterThan'
-  , 'greaterThanEqual'
-  , 'equal'
-  , 'notEqual'
-  , 'any'
-  , 'all'
-  , 'not'
-  , 'texture2D'
-  , 'texture2DProj'
-  , 'texture2DLod'
-  , 'texture2DProjLod'
-  , 'textureCube'
-  , 'textureCubeLod'
-]
+'use strict';
+
+module.exports = ['gl_Position', 'gl_PointSize', 'gl_ClipVertex', 'gl_FragCoord', 'gl_FrontFacing', 'gl_FragColor', 'gl_FragData', 'gl_FragDepth', 'gl_Color', 'gl_SecondaryColor', 'gl_Normal', 'gl_Vertex', 'gl_MultiTexCoord0', 'gl_MultiTexCoord1', 'gl_MultiTexCoord2', 'gl_MultiTexCoord3', 'gl_MultiTexCoord4', 'gl_MultiTexCoord5', 'gl_MultiTexCoord6', 'gl_MultiTexCoord7', 'gl_FogCoord', 'gl_MaxLights', 'gl_MaxClipPlanes', 'gl_MaxTextureUnits', 'gl_MaxTextureCoords', 'gl_MaxVertexAttribs', 'gl_MaxVertexUniformComponents', 'gl_MaxVaryingFloats', 'gl_MaxVertexTextureImageUnits', 'gl_MaxCombinedTextureImageUnits', 'gl_MaxTextureImageUnits', 'gl_MaxFragmentUniformComponents', 'gl_MaxDrawBuffers', 'gl_ModelViewMatrix', 'gl_ProjectionMatrix', 'gl_ModelViewProjectionMatrix', 'gl_TextureMatrix', 'gl_NormalMatrix', 'gl_ModelViewMatrixInverse', 'gl_ProjectionMatrixInverse', 'gl_ModelViewProjectionMatrixInverse', 'gl_TextureMatrixInverse', 'gl_ModelViewMatrixTranspose', 'gl_ProjectionMatrixTranspose', 'gl_ModelViewProjectionMatrixTranspose', 'gl_TextureMatrixTranspose', 'gl_ModelViewMatrixInverseTranspose', 'gl_ProjectionMatrixInverseTranspose', 'gl_ModelViewProjectionMatrixInverseTranspose', 'gl_TextureMatrixInverseTranspose', 'gl_NormalScale', 'gl_DepthRangeParameters', 'gl_DepthRange', 'gl_ClipPlane', 'gl_PointParameters', 'gl_Point', 'gl_MaterialParameters', 'gl_FrontMaterial', 'gl_BackMaterial', 'gl_LightSourceParameters', 'gl_LightSource', 'gl_LightModelParameters', 'gl_LightModel', 'gl_LightModelProducts', 'gl_FrontLightModelProduct', 'gl_BackLightModelProduct', 'gl_LightProducts', 'gl_FrontLightProduct', 'gl_BackLightProduct', 'gl_FogParameters', 'gl_Fog', 'gl_TextureEnvColor', 'gl_EyePlaneS', 'gl_EyePlaneT', 'gl_EyePlaneR', 'gl_EyePlaneQ', 'gl_ObjectPlaneS', 'gl_ObjectPlaneT', 'gl_ObjectPlaneR', 'gl_ObjectPlaneQ', 'gl_FrontColor', 'gl_BackColor', 'gl_FrontSecondaryColor', 'gl_BackSecondaryColor', 'gl_TexCoord', 'gl_FogFragCoord', 'gl_Color', 'gl_SecondaryColor', 'gl_TexCoord', 'gl_FogFragCoord', 'gl_PointCoord', 'radians', 'degrees', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'pow', 'exp', 'log', 'exp2', 'log2', 'sqrt', 'inversesqrt', 'abs', 'sign', 'floor', 'ceil', 'fract', 'mod', 'min', 'max', 'clamp', 'mix', 'step', 'smoothstep', 'length', 'distance', 'dot', 'cross', 'normalize', 'faceforward', 'reflect', 'refract', 'matrixCompMult', 'lessThan', 'lessThanEqual', 'greaterThan', 'greaterThanEqual', 'equal', 'notEqual', 'any', 'all', 'not', 'texture2D', 'texture2DProj', 'texture2DLod', 'texture2DProjLod', 'textureCube', 'textureCubeLod'];
 
 },{}],225:[function(require,module,exports){
-module.exports = [
-  // current
-    'precision'
-  , 'highp'
-  , 'mediump'
-  , 'lowp'
-  , 'attribute'
-  , 'const'
-  , 'uniform'
-  , 'varying'
-  , 'break'
-  , 'continue'
-  , 'do'
-  , 'fo'+'r'
-  , 'whi'+'le'
-  , 'i'+'f'
-  , 'else'
-  , 'in'
-  , 'out'
-  , 'inout'
-  , 'float'
-  , 'int'
-  , 'void'
-  , 'bool'
-  , 'true'
-  , 'false'
-  , 'discard'
-  , 'return'
-  , 'mat2'
-  , 'mat3'
-  , 'mat4'
-  , 'vec2'
-  , 'vec3'
-  , 'vec4'
-  , 'ivec2'
-  , 'ivec3'
-  , 'ivec4'
-  , 'bvec2'
-  , 'bvec3'
-  , 'bvec4'
-  , 'sampler1D'
-  , 'sampler2D'
-  , 'sampler3D'
-  , 'samplerCube'
-  , 'sampler1DShadow'
-  , 'sampler2DShadow'
-  , 'struct'
+'use strict';
 
-  // future
-  , 'asm'
-  , 'class'
-  , 'union'
-  , 'enum'
-  , 'typedef'
-  , 'template'
-  , 'this'
-  , 'packed'
-  , 'goto'
-  , 'switch'
-  , 'default'
-  , 'inline'
-  , 'noinline'
-  , 'volatile'
-  , 'public'
-  , 'static'
-  , 'extern'
-  , 'external'
-  , 'interface'
-  , 'long'
-  , 'short'
-  , 'double'
-  , 'half'
-  , 'fixed'
-  , 'unsigned'
-  , 'input'
-  , 'output'
-  , 'hvec2'
-  , 'hvec3'
-  , 'hvec4'
-  , 'dvec2'
-  , 'dvec3'
-  , 'dvec4'
-  , 'fvec2'
-  , 'fvec3'
-  , 'fvec4'
-  , 'sampler2DRect'
-  , 'sampler3DRect'
-  , 'sampler2DRectShadow'
-  , 'sizeof'
-  , 'cast'
-  , 'namespace'
-  , 'using'
-]
+module.exports = [
+// current
+'precision', 'highp', 'mediump', 'lowp', 'attribute', 'const', 'uniform', 'varying', 'break', 'continue', 'do', 'fo' + 'r', 'whi' + 'le', 'i' + 'f', 'else', 'in', 'out', 'inout', 'float', 'int', 'void', 'bool', 'true', 'false', 'discard', 'return', 'mat2', 'mat3', 'mat4', 'vec2', 'vec3', 'vec4', 'ivec2', 'ivec3', 'ivec4', 'bvec2', 'bvec3', 'bvec4', 'sampler1D', 'sampler2D', 'sampler3D', 'samplerCube', 'sampler1DShadow', 'sampler2DShadow', 'struct'
+
+// future
+, 'asm', 'class', 'union', 'enum', 'typedef', 'template', 'this', 'packed', 'goto', 'switch', 'default', 'inline', 'noinline', 'volatile', 'public', 'static', 'extern', 'external', 'interface', 'long', 'short', 'double', 'half', 'fixed', 'unsigned', 'input', 'output', 'hvec2', 'hvec3', 'hvec4', 'dvec2', 'dvec3', 'dvec4', 'fvec2', 'fvec3', 'fvec4', 'sampler2DRect', 'sampler3DRect', 'sampler2DRectShadow', 'sizeof', 'cast', 'namespace', 'using'];
 
 },{}],226:[function(require,module,exports){
-module.exports = [
-    '<<='
-  , '>>='
-  , '++'
-  , '--'
-  , '<<'
-  , '>>'
-  , '<='
-  , '>='
-  , '=='
-  , '!='
-  , '&&'
-  , '||'
-  , '+='
-  , '-='
-  , '*='
-  , '/='
-  , '%='
-  , '&='
-  , '^='
-  , '|='
-  , '('
-  , ')'
-  , '['
-  , ']'
-  , '.'
-  , '!'
-  , '~'
-  , '*'
-  , '/'
-  , '%'
-  , '+'
-  , '-'
-  , '<'
-  , '>'
-  , '&'
-  , '^'
-  , '|'
-  , '?'
-  , ':'
-  , '='
-  , ','
-  , ';'
-  , '{'
-  , '}'
-]
+'use strict';
+
+module.exports = ['<<=', '>>=', '++', '--', '<<', '>>', '<=', '>=', '==', '!=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '&=', '^=', '|=', '(', ')', '[', ']', '.', '!', '~', '*', '/', '%', '+', '-', '<', '>', '&', '^', '|', '?', ':', '=', ',', ';', '{', '}'];
 
 },{}],227:[function(require,module,exports){
 var through;

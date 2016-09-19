@@ -24,7 +24,8 @@ window.MathBox = exports;
 
 window.mathBox = exports.mathBox = mathBox;
 
-exports.version = '0.0.5';
+const version = '0.0.5';
+//export version;
 
 exports.Context = Context = require('./context');
 
@@ -34,7 +35,7 @@ for (k in ref) {
   exports[k] = v;
 }
 
-require('./splash');
+import './splash';
 
 THREE.Bootstrap.registerPlugin('mathbox', {
   defaults: {

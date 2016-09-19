@@ -1,4 +1,5 @@
 var gulp       = require('gulp');
+var babel      = require('gulp-babel');
 var gutil      = require('gulp-util');
 var uglify     = require('gulp-uglify');
 var concat     = require('gulp-concat');
@@ -76,12 +77,13 @@ gulp.task('browserify', function () {
         debug: false,
         //detectGlobals: false,
         bare: true,
-        transform: ['coffeeify'],
-        extensions: ['.coffee', '.js']// extensions: ['.coffee'],
+        transform: ['coffeeify'/*, 'babelify'*/],
+        extensions: ['.coffee']// extensions: ['.coffee'],
       }))
       .pipe(rename({
         extname: ".js",
       }))
+      .pipe(babel())
       .pipe(gulp.dest('.tmp/'))
 });
 
