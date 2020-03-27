@@ -86,7 +86,9 @@ gulp.task('browserify', function () {
       .pipe(rename({
         extname: ".js",
       }))
+      .pipe(sourcemaps.init({loadMaps: true}))
       .pipe(babel())
+      .pipe(sourcemaps.write('./'))
       .pipe(gulp.dest('.tmp/'))
 });
 
@@ -152,7 +154,7 @@ gulp.task('build', function (callback) {
 })
 
 gulp.task('default', function (callback) {
-  sequence('build', 'uglify-js', callback);
+  sequence('build', callback);
 });
 
 gulp.task('docs', shell.task([
