@@ -77,7 +77,7 @@ gulp.task('glsl', function () {
 gulp.task('browserify', function () {
   return gulp.src('es6/index.js', { read: false })
       .pipe(browserify({
-        debug: false,
+        debug: true,
         //detectGlobals: false,
         bare: true,
         transform: ['coffeeify'/*, 'babelify'*/],
