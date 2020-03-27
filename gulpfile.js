@@ -12,6 +12,7 @@ var shell      = require('gulp-shell');
 var jsify      = require('./vendor/gulp-jsify');
 var plumber    = require('gulp-plumber');
 var batch      = require('gulp-batch');
+var sourcemaps = require('gulp-sourcemaps');
 
 var KarmaServer = require('karma').Server;
 
@@ -38,7 +39,7 @@ var vendor = [
 
 var css = [
   'vendor/shadergraph/build/*.css',
-  'es5/**/*.css',
+  'es6/**/*.css',
 ];
 
 var core = [
@@ -46,11 +47,11 @@ var core = [
 ];
 
 var glsls = [
-  'es5/shaders/glsl/**/*.glsl'
+  'es6/shaders/glsl/**/*.glsl'
 ];
 
 var js = [
-  'es5/**/*.js'
+  'es6/**/*.js'
 ];
 
 // var coffees = [
@@ -67,12 +68,14 @@ var test = bundle.concat([
 
 gulp.task('glsl', function () {
   return gulp.src(glsls)
+  .pipe(sourcemaps.init({loadMaps: true}))
     .pipe(jsify("shaders.js", "module.exports"))
+    .pipe(sourcemaps.write('./'))
     .pipe(gulp.dest('./build/'))
 });
 
 gulp.task('browserify', function () {
-  return gulp.src('es5/index.js', { read: false })
+  return gulp.src('es6/index.js', { read: false })
       .pipe(browserify({
         debug: false,
         //detectGlobals: false,
@@ -89,20 +92,26 @@ gulp.task('browserify', function () {
 
 gulp.task('css', function () {
   return gulp.src(css)
-    .pipe(concat(builds.css))
-    .pipe(gulp.dest(''));
+  .pipe(sourcemaps.init({loadMaps: true}))
+  .pipe(concat(builds.css))
+    .pipe(sourcemaps.write('./'))
+    .pipe(gulp.dest('./'));
 });
 
 gulp.task('core', function () {
   return gulp.src(core)
+    .pipe(sourcemaps.init({loadMaps: true}))
     .pipe(concat(builds.core))
-    .pipe(gulp.dest(''));
+    .pipe(sourcemaps.write('./'))
+    .pipe(gulp.dest('./'));
 });
 
 gulp.task('bundle', function () {
   return gulp.src(bundle)
-    .pipe(concat(builds.bundle))
-    .pipe(gulp.dest(''));
+  .pipe(sourcemaps.init({loadMaps: true}))
+  .pipe(concat(builds.bundle))
+    .pipe(sourcemaps.write('./'))
+    .pipe(gulp.dest('./'));
 });
 
 gulp.task('uglify-js', function () {

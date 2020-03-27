@@ -35,7 +35,7 @@ for (k in ref) {
   exports[k] = v;
 }
 
-import './splash';
+require('./splash');
 
 THREE.Bootstrap.registerPlugin('mathbox', {
   defaults: {
