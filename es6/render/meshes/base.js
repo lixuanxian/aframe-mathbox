@@ -71,6 +71,7 @@ Base = (function(superClass) {
     precision = this.renderer.getPrecision();
     vertexPrefix = "    precision " + precision + " float;\n    precision " + precision + " int;\nuniform mat4 modelMatrix;\nuniform mat4 modelViewMatrix;\nuniform mat4 projectionMatrix;\nuniform mat4 viewMatrix;\nuniform mat3 normalMatrix;\nuniform vec3 cameraPosition;";
     fragmentPrefix = "    precision " + precision + " float;\n    precision " + precision + " int;\nuniform mat4 viewMatrix;\nuniform vec3 cameraPosition;";
+    options.attributes = undefined
     material = new THREE.RawShaderMaterial(options);
     ref = ['vertexGraph', 'fragmentGraph'];
     for (i = 0, len = ref.length; i < len; i++) {

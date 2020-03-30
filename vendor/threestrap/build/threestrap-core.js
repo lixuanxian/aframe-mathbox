@@ -74,7 +74,7 @@ THREE.Binder = {
 
   apply: function ( object ) {
 
-    THREE.EventDispatcher.prototype.apply(object);
+    Object.assign( object, THREE.EventDispatcher.prototype );
 
     object.trigger     = THREE.Binder._trigger;
     object.triggerOnce = THREE.Binder._triggerOnce;
@@ -119,7 +119,6 @@ THREE.Binder = {
   },
 
 };
-
 THREE.Api = {
   apply: function (object) {
 
@@ -1031,3 +1030,4 @@ THREE.Bootstrap.registerPlugin('warmup', {
   },
 
 });
+//# sourceMappingURL=threestrap-core.js.map

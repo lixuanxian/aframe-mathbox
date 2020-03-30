@@ -67,9 +67,11 @@ Line = (function(superClass) {
     }
     f.pipe(this._fragmentColor(hasStyle, material, color, mask, map, 2, stpq, combine, linear));
     f.pipe('fragment.color', this.uniforms);
-    this.material = this._material(factory.link({
+    let params = factory.link({
       side: THREE.DoubleSide
-    }));
+    })
+    console.log(params)
+    this.material = this._material(params);
     object = new THREE.Mesh(this.geometry, this.material);
     this._raw(object);
     this.renders = [object];

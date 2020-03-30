@@ -53,7 +53,7 @@ Geometry = (function(superClass) {
 
   Geometry.prototype._emitter = function(name) {
     var array, attribute, dimensions, four, offset, one, three, two;
-    attribute = this.attributes[name];
+    attribute = this.attributes[name] || this.index;
     dimensions = attribute.itemSize;
     array = attribute.array;
     offset = 0;

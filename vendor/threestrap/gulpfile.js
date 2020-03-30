@@ -5,6 +5,7 @@ var rename = require("gulp-rename");
 var karma = require('gulp-karma');
 var runSequence = require('run-sequence');
 var watch = require('gulp-watch');
+var sourcemaps = require('gulp-sourcemaps');
 
 var builds = {
   core: 'build/threestrap-core.js',
@@ -62,19 +63,25 @@ var test = [
 
 gulp.task('core', function () {
   return gulp.src(core)
+    .pipe(sourcemaps.init({loadMaps: true}))
     .pipe(concat(builds.core))
+    .pipe(sourcemaps.write('./'))
     .pipe(gulp.dest(''));
 });
 
 gulp.task('extra', function () {
   return gulp.src(extra)
+    .pipe(sourcemaps.init({loadMaps: true}))
     .pipe(concat(builds.extra))
+    .pipe(sourcemaps.write('./'))
     .pipe(gulp.dest(''));
 });
 
 gulp.task('bundle', function () {
   return gulp.src(bundle)
+    .pipe(sourcemaps.init({loadMaps: true}))
     .pipe(concat(builds.bundle))
+    .pipe(sourcemaps.write('./'))
     .pipe(gulp.dest(''));
 });
 

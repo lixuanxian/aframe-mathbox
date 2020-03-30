@@ -2214,3 +2214,4 @@ THREE.Bootstrap.registerPlugin('ui', {
   },
 
 });
+//# sourceMappingURL=threestrap-extra.js.map
