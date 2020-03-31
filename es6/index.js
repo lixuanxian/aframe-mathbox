@@ -59,6 +59,7 @@ THREE.Bootstrap.registerPlugin('mathbox', {
           scene = (options != null ? options.scene : void 0) || _this.options.scene || three.scene;
           camera = (options != null ? options.camera : void 0) || _this.options.camera || three.camera;
           _this.context = new Context(three.renderer, scene, camera);
+          three.renderer.context._renderer = three.renderer
           _this.context.api.three = three.three = three;
           _this.context.api.mathbox = three.mathbox = _this.context.api;
           _this.context.api.start = function() {

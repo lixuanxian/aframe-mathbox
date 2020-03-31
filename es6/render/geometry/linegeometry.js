@@ -36,7 +36,7 @@ LineGeometry = (function(superClass) {
     points = vertices * strips * ribbons * layers * 2;
     quads = segments * strips * ribbons * layers;
     triangles = quads * 2;
-    this.addAttribute('index', new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
+    this.setIndex(new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
     this.addAttribute('position4', new THREE.BufferAttribute(new Float32Array(points * 4), 4));
     this.addAttribute('line', new THREE.BufferAttribute(new Float32Array(points * 2), 2));
     this.addAttribute('strip', new THREE.BufferAttribute(new Float32Array(points * 2), 2));

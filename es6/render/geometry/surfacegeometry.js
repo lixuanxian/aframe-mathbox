@@ -41,7 +41,7 @@ SurfaceGeometry = (function(superClass) {
     points = width * height * surfaces * layers;
     quads = segmentsX * segmentsY * surfaces * layers;
     triangles = quads * 2;
-    this.addAttribute('index', new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
+    this.setIndex(new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
     this.addAttribute('position4', new THREE.BufferAttribute(new Float32Array(points * 4), 4));
     this.addAttribute('surface', new THREE.BufferAttribute(new Float32Array(points * 2), 2));
     this._autochunk();

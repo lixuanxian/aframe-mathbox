@@ -29,22 +29,29 @@ DataTexture = (function() {
   }
 
   DataTexture.prototype.build = function(options) {
-    var gl;
+    var gl,state;
     gl = this.gl;
+    state = gl._renderer.state
     this.texture = gl.createTexture();
     this.format = [null, gl.LUMINANCE, gl.LUMINANCE_ALPHA, gl.RGB, gl.RGBA][this.channels];
     this.format3 = [null, THREE.LuminanceFormat, THREE.LuminanceAlphaFormat, THREE.RGBFormat, THREE.RGBAFormat][this.channels];
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+
+    state.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, this.minFilter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, this.magFilter);
     this.data = new this.ctor(this.n);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
     gl.texImage2D(gl.TEXTURE_2D, 0, this.format, this.width, this.height, 0, this.format, this.type, this.data);
     this.textureObject = new THREE.Texture(new Image(), THREE.UVMapping, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, options.minFilter, options.magFilter);
-    this.textureObject.__webglInit = true;
-    this.textureObject.__webglTexture = this.texture;
+
+    this.textureProperties = gl._renderer.properties.get(this.textureObject)
+    this.textureProperties.__webglInit = true
+    this.textureProperties.__webglTexture  = this.texture
+
     this.textureObject.format = this.format3;
     this.textureObject.type = THREE.FloatType;
     this.textureObject.unpackAlignment = 1;
@@ -63,17 +70,19 @@ DataTexture = (function() {
   };
 
   DataTexture.prototype.write = function(data, x, y, w, h) {
-    var gl;
+    var gl,state;
     gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    state = gl._renderer.state
+    state.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     return gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, this.format, this.type, data);
   };
 
   DataTexture.prototype.dispose = function() {
     this.gl.deleteTexture(this.texture);
-    this.textureObject.__webglInit = false;
-    this.textureObject.__webglTexture = null;
+    this.textureProperties.__webglInit = false;
+    this.textureProperties.__webglTexture = null;
+    this.textureProperties = null
     return this.textureObject = this.texture = null;
   };
 

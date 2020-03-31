@@ -32,7 +32,7 @@ ArrowGeometry = (function(superClass) {
     arrows = strips * ribbons * layers;
     points = (sides + 2) * arrows;
     triangles = (sides * 2) * arrows;
-    this.addAttribute('index', new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
+    this.setIndex(new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
     this.addAttribute('position4', new THREE.BufferAttribute(new Float32Array(points * 4), 4));
     this.addAttribute('arrow', new THREE.BufferAttribute(new Float32Array(points * 3), 3));
     this.addAttribute('attach', new THREE.BufferAttribute(new Float32Array(points * 2), 2));

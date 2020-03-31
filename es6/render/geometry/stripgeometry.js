@@ -36,7 +36,7 @@ StripGeometry = (function(superClass) {
     samples = width * height * depth;
     points = items * samples;
     triangles = sides * samples;
-    this.addAttribute('index', new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
+    this.setIndex(new THREE.BufferAttribute(new Uint16Array(triangles * 3), 1));
     this.addAttribute('position4', new THREE.BufferAttribute(new Float32Array(points * 4), 4));
     this.addAttribute('strip', new THREE.BufferAttribute(new Float32Array(points * 3), 3));
     this._autochunk();

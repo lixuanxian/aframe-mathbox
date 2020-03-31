@@ -453,8 +453,8 @@ helpers = {
           measure = 1;
           if ((camera = typeof root !== "undefined" && root !== null ? root.getCamera() : void 0)) {
             m = camera.projectionMatrix;
-            top.set(0, -.5, 1).applyProjection(m);
-            bottom.set(0, .5, 1).applyProjection(m);
+            top.set(0, -.5, 1).applyMatrix4(m);
+            bottom.set(0, .5, 1).applyMatrix4(m);
             top.sub(bottom);
             measure = top.y;
           }

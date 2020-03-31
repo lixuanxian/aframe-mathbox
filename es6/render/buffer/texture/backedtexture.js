@@ -24,7 +24,7 @@ BackedTexture = (function(superClass) {
   }
 
   BackedTexture.prototype.resize = function(width, height) {
-    var gl, old, oldHeight, oldWidth;
+    var gl, old, oldHeight, oldWidth,state;
     old = this.data;
     oldWidth = this.width;
     oldHeight = this.height;
@@ -33,7 +33,8 @@ BackedTexture = (function(superClass) {
     this.n = width * height * this.channels;
     this.data = new this.ctor(this.n);
     gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    state = gl._renderer.state
+    state.bindTexture(gl.TEXTURE_2D, this.texture)
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, this.format, width, height, 0, this.format, this.type, this.data);
     this.uniforms.dataResolution.value.set(1 / width, 1 / height);
