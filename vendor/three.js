@@ -24234,13 +24234,11 @@
 
 			if ( this.info.autoReset ) this.info.reset();
 
-			if ( renderTarget === undefined ) {
+			if ( renderTarget !== undefined ) {
 
-				renderTarget = null;
+				this.setRenderTarget( renderTarget );
 
 			}
-
-			this.setRenderTarget( renderTarget );
 
 			//
 
