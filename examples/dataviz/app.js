@@ -34,19 +34,6 @@ var cube = new THREE.Mesh( geometry, material );
 // Add cube to Scene
 scene.add( cube );
 
-// Render Loop
-var render = function () {
-  requestAnimationFrame( render );
-
-  cube.rotation.x += 0.01;
-  cube.rotation.y += 0.01;
-
-  // Render the scene
-  renderer.render(scene, camera);
-};
-
-render();
-
 var geometry = new THREE.BoxGeometry( 0.5, 0.5, 0.5 );
 var material = new THREE.MeshBasicMaterial( { color: "#414F81" } );
 var cube1 = new THREE.Mesh( geometry, material );
@@ -57,27 +44,27 @@ var cube1 = new THREE.Mesh( geometry, material );
   var mathbox  = context.api;
   renderer.context._renderer = renderer
 
-  view = mathbox.cartesian({
+view = mathbox
+.cartesian({
     id:"plot",
     range: [[0, 1], [0, 1], [0, 1]],
     scale: [1, 1, 1],
   });
 
-
   view.axis({
     end: true,
-    width: 0.1,
+    width: 0.01,
   });
   view.axis({
     id:"plotX",
     axis: 2,
     end: true,
-    width: 0.1,
+    width: 0.01,
   });
   view.axis({
     axis: 3,
     end: true,
-    width: 0.1,
+    width: 0.01,
   });
 
   // var plot = view.select("#plot").set('visible',false)
@@ -113,70 +100,67 @@ var cube1 = new THREE.Mesh( geometry, material );
     origin: [0,0,1,0],
     axis: "x",
   }).text({
-    live: false,
-    data: interpolate(dataMinimums[0], dataMaximums[0], 11)
+    live: true,
+    data: interpolate(dataMinimums[0], dataMaximums[0], 5)
   })
-  // .point({
-  //   size: 5,
-  //   color: 0xFF0000
-  // })
-  .label({
-    color: colors.x,
-  })
-
-  view.scale({
-    divide: 5,
-    origin: [0,0,1,0],
-    axis: "y",
-  }).text({
-    live: false,
-    data: interpolate(dataMinimums[1], dataMaximums[1], 11)
-  })
-  // .point({
-  //   size: 5,
-  //   color: 0xFF0000
-  // })
-  .label({
-    color: colors.y,
-    offset: [-16, 0]
-  })
-
-  view.scale({
-    divide: 5,
-    origin: [1,0,0,0],
-    axis: "z",
-  })
-  .text({
-    live: false,
-    data: interpolate(dataMinimums[2], dataMaximums[2], 11)
-  })
-  // .point({
-  //   size: 5,
-  //   color: 0xFF0000
-  // })
   .label({
     color: colors.z,
-    offset: [16, 0]
+    size:0.01
   })
 
-  view.grid({
-    axes: "xy",
-    width:0.01,
-    divideX: 3,
-    divideY: 3
-  })
-  .grid({
-    axes: "xz",
-    width:0.01,
-    divideX: 5,
-    divideY: 5,
-  })
-  .grid({
-    axes: "yz",
-    width:0.01,
-    divideX: 5,
-    divideY: 5,
-  })
+  // view.scale({
+  //   divide: 5,
+  //   origin: [0,0,1,0],
+  //   axis: "y",
+  // }).text({
+  //   live: false,
+  //   data: interpolate(dataMinimums[1], dataMaximums[1], 11)
+  // })
+  // // .point({
+  // //   size: 5,
+  // //   color: 0xFF0000
+  // // })
+  // .label({
+  //   color: colors.y,
+  //   offset: [-16, 0]
+  // })
+
+  // view.scale({
+  //   divide: 5,
+  //   origin: [1,0,0,0],
+  //   axis: "z",
+  // })
+  // .text({
+  //   live: false,
+  //   data: interpolate(dataMinimums[2], dataMaximums[2], 11)
+  // })
+  // .point({
+  //   size: 5,
+  //   color: 0xFF0000
+  // })
+  // .label({
+  //   color: colors.z,
+  //   offset: [16, 0]
+  // })
+
+  // view.grid({
+  //   axes: "xy",
+  //   width:0.01,
+  //   divideX: 3,
+  //   divideY: 3
+  // })
+  // .grid({
+  //   axes: "xz",
+  //   width:0.01,
+  //   divideX: 5,
+  //   divideY: 5,
+  // })
+  // .grid({
+  //   axes: "yz",
+  //   width:0.01,
+  //   divideX: 5,
+  //   divideY: 5,
+  // })
 
 //   view.array({
 //     items: 1,
@@ -197,3 +181,16 @@ var cube1 = new THREE.Mesh( geometry, material );
 //   view.select('#data').set('data', [
 //     [0.5,0.5,0.5]
 //   ])
+
+// Render Loop
+var frame = function () {
+  requestAnimationFrame( frame );
+
+  cube.rotation.x += 0.01;
+  cube.rotation.y += 0.01;
+  context.frame();
+  // Render the scene
+  renderer.render(scene, camera);
+};
+
+requestAnimationFrame(frame);
