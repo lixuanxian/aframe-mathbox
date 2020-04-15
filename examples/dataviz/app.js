@@ -143,24 +143,24 @@ view = mathbox
   //   offset: [16, 0]
   // })
 
-  // view.grid({
-  //   axes: "xy",
-  //   width:0.01,
-  //   divideX: 3,
-  //   divideY: 3
-  // })
-  // .grid({
-  //   axes: "xz",
-  //   width:0.01,
-  //   divideX: 5,
-  //   divideY: 5,
-  // })
-  // .grid({
-  //   axes: "yz",
-  //   width:0.01,
-  //   divideX: 5,
-  //   divideY: 5,
-  // })
+  view.grid({
+    axes: "xy",
+    width:0.01,
+    divideX: 3,
+    divideY: 3
+  })
+  .grid({
+    axes: "xz",
+    width:0.01,
+    divideX: 5,
+    divideY: 5,
+  })
+  .grid({
+    axes: "yz",
+    width:0.01,
+    divideX: 5,
+    divideY: 5,
+  })
 
 //   view.array({
 //     items: 1,
