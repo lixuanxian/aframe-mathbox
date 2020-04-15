@@ -88,7 +88,7 @@ DataTexture = (function() {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
-    gl.texImage2D(gl.TEXTURE_2D,0, internalFormat, this.width, this.height, 0, this.format, this.type, this.data,0);
+    gl.texImage2D(gl.TEXTURE_2D,0,internalFormat, this.width, this.height, 0, this.format, this.type, this.data,0);
     this.textureObject = new THREE.Texture(new Image(), THREE.UVMapping, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, options.minFilter, options.magFilter);
 
     this.textureProperties = gl._renderer.properties.get(this.textureObject)
