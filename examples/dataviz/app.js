@@ -1,5 +1,4 @@
 var scene = new THREE.Scene();
-
 // Create a basic perspective camera
 var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
 camera.position.set(0, 0, 3);
@@ -18,7 +17,6 @@ renderer.setClearColor("#000000");
 
 // Configure renderer size
 renderer.setSize( window.innerWidth, window.innerHeight );
-
 // Append Renderer to DOM
 document.body.appendChild( renderer.domElement );
 
@@ -41,6 +39,7 @@ var cube1 = new THREE.Mesh( geometry, material );
   var group = new THREE.Object3D()
   scene.add(group)
   var context = new MathBox.Context(renderer, group, camera).init();
+  context.resize({ viewWidth: window.innerWidth, viewHeight: window.innerHeight });
   var mathbox  = context.api;
   renderer.context._renderer = renderer
 
@@ -53,22 +52,19 @@ view = mathbox
 
   view.axis({
     end: true,
-    width: 0.01,
+    width: 3,
   });
   view.axis({
     id:"plotX",
     axis: 2,
     end: true,
-    width: 0.01,
+    width: 3,
   });
   view.axis({
     axis: 3,
     end: true,
-    width: 0.01,
+    width: 3,
   });
-
-  // var plot = view.select("#plot").set('visible',false)
-//   var axis = view.select("#plotX").set('width',0.3)
 
   window.scene = scene
   var colors = {
@@ -80,6 +76,11 @@ view = mathbox
     yz: 0x2ECC40,  // green
     xyz: 0x654321, // brown
   }
+  colors = {
+    x: new THREE.Color(0xFF4136),
+    y: new THREE.Color(0x2ECC40),
+    z: new THREE.Color(0x0074D9)
+  };
 
   var dataMaximums = [1, 1, 1];
   var dataMinimums = [0, 0, 0];
@@ -95,69 +96,77 @@ view = mathbox
     return vals;
   }
 
+  view.array({
+    id: "colors",
+    live: false,
+    data: [colors.x, colors.y, colors.z].map(function (color){
+      return [color.r, color.g, color.b, 1];
+    }),
+  });
+
+  view.array({
+    data: [[1,0,0], [0,1,0], [0,0,1]],
+    channels: 3, // necessary
+    live: false,
+  })
+  .text({
+    data: ["x", "y", "z"],
+  }).label({
+    color: 0xFFFF00,
+    colors: "#colors",
+  });
+
   view.scale({
     divide: 5,
     origin: [0,0,1,0],
     axis: "x",
   }).text({
     live: true,
-    data: interpolate(dataMinimums[0], dataMaximums[0], 5)
+    data: interpolate(dataMinimums[0], dataMaximums[0], 11)
   })
   .label({
     color: colors.z,
-    size:0.01
   })
 
-  // view.scale({
-  //   divide: 5,
-  //   origin: [0,0,1,0],
-  //   axis: "y",
-  // }).text({
-  //   live: false,
-  //   data: interpolate(dataMinimums[1], dataMaximums[1], 11)
-  // })
-  // // .point({
-  // //   size: 5,
-  // //   color: 0xFF0000
-  // // })
-  // .label({
-  //   color: colors.y,
-  //   offset: [-16, 0]
-  // })
+  view.scale({
+    divide: 5,
+    origin: [0,0,1,0],
+    axis: "y",
+  }).text({
+    live: false,
+    data: interpolate(dataMinimums[1], dataMaximums[1], 11)
+  })
+  .label({
+    color: colors.y,
+    offset: [-16, 0]
+  })
 
-  // view.scale({
-  //   divide: 5,
-  //   origin: [1,0,0,0],
-  //   axis: "z",
-  // })
-  // .text({
-  //   live: false,
-  //   data: interpolate(dataMinimums[2], dataMaximums[2], 11)
-  // })
-  // .point({
-  //   size: 5,
-  //   color: 0xFF0000
-  // })
-  // .label({
-  //   color: colors.z,
-  //   offset: [16, 0]
-  // })
+  view.scale({
+    divide: 5,
+    origin: [1,0,0,0],
+    axis: "z",
+  })
+  .text({
+    live: false,
+    data: interpolate(dataMinimums[2], dataMaximums[2], 11)
+  })
+  .label({
+    color: colors.z,
+    offset: [16, 0]
+  })
 
   view.grid({
     axes: "xy",
-    width:0.01,
-    divideX: 3,
-    divideY: 3
+    divideX: 5,
+    divideY: 5
   })
   .grid({
     axes: "xz",
-    width:0.01,
     divideX: 5,
     divideY: 5,
   })
   .grid({
     axes: "yz",
-    width:0.01,
     divideX: 5,
     divideY: 5,
   })
