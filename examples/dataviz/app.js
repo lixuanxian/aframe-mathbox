@@ -20,6 +20,20 @@ renderer.setSize( window.innerWidth, window.innerHeight );
 // Append Renderer to DOM
 document.body.appendChild( renderer.domElement );
 
+// Render Loop
+var frame = function () {
+  requestAnimationFrame( frame );
+
+  cube.rotation.x += 0.01;
+  cube.rotation.y += 0.01;
+  context.frame();
+  // Render the scene
+  renderer.render(scene, camera);
+};
+
+requestAnimationFrame(frame);
+
+
 // ------------------------------------------------
 // FUN STARTS HERE
 // ------------------------------------------------
@@ -190,16 +204,3 @@ view = mathbox
 //   view.select('#data').set('data', [
 //     [0.5,0.5,0.5]
 //   ])
-
-// Render Loop
-var frame = function () {
-  requestAnimationFrame( frame );
-
-  cube.rotation.x += 0.01;
-  cube.rotation.y += 0.01;
-  context.frame();
-  // Render the scene
-  renderer.render(scene, camera);
-};
-
-requestAnimationFrame(frame);

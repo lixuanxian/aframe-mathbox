@@ -9,12 +9,43 @@
 </head>
 <body>
   <script>
-    var mathbox = mathBox({
-      plugins: ['core'],
+    var scene = new THREE.Scene();
+    // Create a basic perspective camera
+    var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 0, 3);
+    // Create a renderer with Antialiasing
+    let canvas = document.createElement('canvas');
+    let context2 = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+    var renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: false,
+      canvas,
+      context: context2
     });
-    var three = mathbox.three;
 
-    three.renderer.setClearColor(new THREE.Color(0xFFFFFF), 1.0);
+    // Configure renderer clear color
+    renderer.setClearColor("#000000");
+
+    // Configure renderer size
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    // Append Renderer to DOM
+    document.body.appendChild(renderer.domElement);
+
+    // Render Loop
+    var frame = function () {
+      requestAnimationFrame(frame);
+
+      context.frame();
+      // Render the scene
+      renderer.render(scene, camera);
+    };
+
+    requestAnimationFrame(frame);
+
+    var context = new MathBox.Context(renderer, scene, camera).init();
+    context.resize({ viewWidth: window.innerWidth, viewHeight: window.innerHeight });
+    var mathbox = context.api;
+    renderer.context._renderer = renderer
 
     function previous() {
       present.set('index', present.get('index') - 1);
