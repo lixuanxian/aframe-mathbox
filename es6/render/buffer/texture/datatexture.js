@@ -18,6 +18,7 @@ DataTexture = (function() {
     this.channels = channels;
     this.n = this.width * this.height * this.channels;
     gl = this.gl;
+    this.isWebGL2 = gl instanceof WebGL2RenderingContext
     minFilter = (ref = options.minFilter) != null ? ref : THREE.NearestFilter;
     magFilter = (ref1 = options.magFilter) != null ? ref1 : THREE.NearestFilter;
     type = (ref2 = options.type) != null ? ref2 : THREE.FloatType;
@@ -76,7 +77,7 @@ DataTexture = (function() {
     gl = this.gl;
     state = gl._renderer.state
     this.texture = gl.createTexture();
-    this.format = [null, gl.RED, gl.LUMINANCE_ALPHA, gl.RGB, gl.RGBA][this.channels];
+    this.format = [null,this.isWebGL2?gl.RED:gl.LUMINANCE, gl.LUMINANCE_ALPHA, gl.RGB, gl.RGBA][this.channels];
     this.format3 = [null, THREE.LuminanceFormat, THREE.LuminanceAlphaFormat, THREE.RGBFormat, THREE.RGBAFormat][this.channels];
     internalFormat = this.getInternalFormat(this.format,this.type)
     state.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -88,7 +89,7 @@ DataTexture = (function() {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
-    gl.texImage2D(gl.TEXTURE_2D,0,internalFormat, this.width, this.height, 0, this.format, this.type, this.data,0);
+    gl.texImage2D(gl.TEXTURE_2D,0,this.isWebGL2?internalFormat:this.format, this.width, this.height, 0, this.format, this.type, this.data,0);
     this.textureObject = new THREE.Texture(new Image(), THREE.UVMapping, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, options.minFilter, options.magFilter);
 
     this.textureProperties = gl._renderer.properties.get(this.textureObject)
