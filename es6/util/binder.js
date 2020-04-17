@@ -1,6 +1,6 @@
 // Recycled from threestrap
 
-module.exports = self = {
+module.exports = binder = {
   bind: function (context, globals) {
     return function (key, object) {
 
@@ -39,7 +39,7 @@ module.exports = self = {
         };
 
         // Polyfill for both styles of event listener adders
-        self._polyfill(target, [ 'addEventListener', 'on' ], function (method) {
+        binder._polyfill(target, [ 'addEventListener', 'on' ], function (method) {
           target[method](name, callback);
         });
 
@@ -64,7 +64,7 @@ module.exports = self = {
         object.__binds.forEach(function (bind) {
 
           // Polyfill for both styles of event listener removers
-          self._polyfill(bind.target, [ 'removeEventListener', 'off' ], function (method) {
+          binder._polyfill(bind.target, [ 'removeEventListener', 'off' ], function (method) {
             bind.target[method](bind.name, bind.callback);
           });
         }.bind(this));
@@ -78,8 +78,8 @@ module.exports = self = {
 
     Object.assign( object, THREE.EventDispatcher.prototype );
 
-    object.trigger     = self._trigger;
-    object.triggerOnce = self._triggerOnce;
+    object.trigger     = binder._trigger;
+    object.triggerOnce = binder._triggerOnce;
 
     object.on = object.addEventListener;
     object.off = object.removeEventListener;
