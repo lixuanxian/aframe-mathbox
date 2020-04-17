@@ -20,6 +20,7 @@ var builds = {
   core:   'build/mathbox-core.js',
   bundle: 'build/mathbox-bundle.js',
   css:    'build/mathbox.css',
+  // three: 'build'
 };
 
 var products = [
@@ -27,8 +28,13 @@ var products = [
   builds.bundle
 ];
 
+var three = [
+  "vendor/three.js",
+  "vendor/three.min.js"
+]
+
 var vendor = [
-  'vendor/three.js',
+  // 'vendor/three.js',
   'vendor/threestrap/build/threestrap.js',
   'vendor/threestrap/vendor/renderers/VRRenderer.js',
   'vendor/threestrap/vendor/controls/VRControls.js',
@@ -87,7 +93,9 @@ gulp.task('browserify', function () {
         extname: ".js",
       }))
       .pipe(sourcemaps.init({loadMaps: true}))
-      .pipe(babel())
+      .pipe(babel(
+        
+      ))
       .pipe(sourcemaps.write('./'))
       .pipe(gulp.dest('.tmp/'))
 });
@@ -115,6 +123,12 @@ gulp.task('bundle', function () {
     .pipe(sourcemaps.write('./'))
     .pipe(gulp.dest('./'));
 });
+
+gulp.task('three', function () {
+  return gulp.src(three)
+     .pipe(gulp.dest('./build'));
+});
+
 
 gulp.task('uglify-js', function () {
   return gulp.src(products)
@@ -150,7 +164,7 @@ gulp.task('watch-build-watch', function () {
 // Main tasks
 
 gulp.task('build', function (callback) {
-  sequence('glsl', 'browserify', ['core', 'bundle', 'css'], callback);
+  sequence('three','glsl', 'browserify', ['core', 'bundle', 'css'], callback);
 })
 
 gulp.task('default', function (callback) {

@@ -4,3 +4,4 @@
 .tmp/*
 release/mathbox-0.0.x*
 /build/*
+yarn-error.log
