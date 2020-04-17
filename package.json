@@ -8,10 +8,16 @@
   },
   "main": "build/mathbox-bundle.js",
   "scripts": {
-    "gulp":"./node_modules/.bin/gulp",
+    "karma":"./node_modules/.bin/karma",
+    "gulp": "./node_modules/.bin/gulp",
     "test": "gulp test",
     "docs": "gulp docs",
-    "build": "gulp"
+    "shadergraph-watch": "cd ./vendor/shadergraph && yarn gulp watch-build  && cd ./../../",
+    "threeStrap-watch": "cd ./vendor/threestrap && yarn gulp watch-build && cd ./../../",
+    "watch": "gulp watch",
+    "shadergraph": "cd ./vendor/shadergraph && yarn build && cd ./../../",
+    "threeStrap": "cd ./vendor/threestrap && yarn build && cd ./../../",
+    "build": "yarn shadergraph && yarn threeStrap && gulp"
   },
   "resolutions": {
     "graceful-fs": "4.1.11"
@@ -51,6 +57,8 @@
     "karma-chrome-launcher": "^0.2.1",
     "karma-coffee-preprocessor": "^0.3.0",
     "karma-jasmine": "^0.3.6",
+    "lodash": "^2.4.1",
+    "optimist": "^0.6.1",
     "run-sequence": "^1.1.4",
     "vinyl-buffer": "^1.0.1",
     "vinyl-source-stream": "^2.0.0",
